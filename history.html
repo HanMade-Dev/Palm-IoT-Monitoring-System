@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - IoT Monitoring Kelapa Sawit</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">
+                <i class="fas fa-seedling"></i> IoT Monitoring Kelapa Sawit
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="dashboard.html">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="history.html">History</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-history"></i> Data Historis</h2>
+            </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-filter"></i> Filter Data
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-lg-2 col-md-4">
+                                <label for="device-select-history" class="form-label">Device</label>
+                                <select class="form-select" id="device-select-history">
+                                    <option value="all">Semua Device</option>
+                                    <option value="ESP32_SAWIT_01">Loading devices...</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-2 col-md-4">
+                                <label for="filter-type" class="form-label">Periode Filter</label>
+                                <select class="form-select" id="filter-type" onchange="updateDateTimeInputs()">
+                                    <option value="range">Range Tanggal</option>
+                                    <option value="day">Harian</option>
+                                    <option value="hour">Per Jam</option>
+                                    <option value="minute">Per Menit</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-2 col-md-4" id="start-date-container">
+                                <label for="start-date" class="form-label">Tanggal Mulai</label>
+                                <input type="date" class="form-control" id="start-date">
+                            </div>
+                            <div class="col-lg-2 col-md-4" id="end-date-container">
+                                <label for="end-date" class="form-label">Tanggal Akhir</label>
+                                <input type="date" class="form-control" id="end-date">
+                            </div>
+                            <div class="col-lg-2 col-md-4 d-none" id="datetime-container">
+                                <label for="datetime-input" class="form-label">Waktu Spesifik</label>
+                                <input type="datetime-local" class="form-control" id="datetime-input">
+                            </div>
+                            <div class="col-lg-1 col-md-4">
+                                <label for="sensor-type" class="form-label">Sensor</label>
+                                <select class="form-select" id="sensor-type">
+                                    <option value="all">Semua</option>
+                                    <option value="distance">Jarak</option>
+                                    <option value="moisture">Lembab</option>
+                                    <option value="temperature">Suhu</option>
+                                    <option value="rain">Hujan</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-1 col-md-4 d-flex align-items-end">
+                                <button class="btn btn-primary me-2" onclick="applyFilter()">
+                                    <i class="fas fa-search"></i> Filter
+                                </button>
+                                <button class="btn btn-secondary" onclick="exportData()">
+                                    <i class="fas fa-download"></i> Export
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-chart-line"></i> Grafik Data Historis
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="historyChart" height="100"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-table"></i> Tabel Data
+                        </h5>
+                        <div>
+                            <span class="badge bg-info" id="total-records">0 records</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Device</th>
+                                        <th>Waktu</th>
+                                        <th>Jarak Air (cm)</th>
+                                        <th>Kelembaban (%)</th>
+                                        <th>Suhu (°C)</th>
+                                        <th>Hujan (%)</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-table-body">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">
+                                            <i class="fas fa-spinner fa-spin"></i> Loading data...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination -->
+                        <nav aria-label="Page navigation">
+                            <ul class="pagination justify-content-center" id="pagination">
+                                <!-- Pagination buttons will be generated by JavaScript -->
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/history.js"></script>
+</body>
+</html>
