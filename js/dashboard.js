@@ -1,3 +1,4 @@
+
 // Dashboard JavaScript for IoT Monitoring System
 
 class IoTDashboard {
@@ -11,37 +12,39 @@ class IoTDashboard {
             temperature: { min: 20, max: 35 },
             rain: { max: 50 }
         };
-        
+
         // Serial communication
         this.serialPort = null;
         this.serialReader = null;
         this.serialConnected = false;
         this.usingSerial = false;
-        
+        this.currentSerialDevice = null;
+        this.connectedSerialPorts = [];
+
         // Multi-device support
         this.devices = [];
-        this.selectedDevice = 'all';
         this.deviceData = {}; // Store data for each device
-        
+        this.deviceCharts = {}; // Store chart data for each device
+        this.currentModalDeviceId = null; // Track which device modal is showing
+
         this.init();
     }
 
     init() {
-        this.setupCharts();
         this.loadDevices();
         this.startRealTimeUpdates();
         this.setupEventListeners();
-        
+        this.setupModalChart();
+
         // Set initial date for filters
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         this.lastDataFetch = today;
     }
 
-    setupCharts() {
-        // Moisture & Temperature Chart
-        const ctx1 = document.getElementById('moistureTempChart').getContext('2d');
-        this.charts.moistureTemp = new Chart(ctx1, {
+    setupModalChart() {
+        const ctx = document.getElementById('modalChart').getContext('2d');
+        this.charts.modal = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
@@ -57,63 +60,7 @@ class IoTDashboard {
                     borderColor: '#ffc107',
                     backgroundColor: 'rgba(255, 193, 7, 0.1)',
                     yAxisID: 'y1'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                scales: {
-                    x: {
-                        display: true,
-                        title: {
-                            display: true,
-                            text: 'Waktu'
-                        }
-                    },
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        title: {
-                            display: true,
-                            text: 'Kelembaban (%)'
-                        },
-                        min: 0,
-                        max: 100
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: 'Suhu (°C)'
-                        },
-                        grid: {
-                            drawOnChartArea: false,
-                        },
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    }
-                }
-            }
-        });
-
-        // Distance & Rain Chart
-        const ctx2 = document.getElementById('distanceRainChart').getContext('2d');
-        this.charts.distanceRain = new Chart(ctx2, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
+                }, {
                     label: 'Jarak Air (cm)',
                     data: [],
                     borderColor: '#0dcaf0',
@@ -148,7 +95,7 @@ class IoTDashboard {
                         position: 'left',
                         title: {
                             display: true,
-                            text: 'Jarak (cm)'
+                            text: 'Kelembaban (%)'
                         }
                     },
                     y1: {
@@ -157,10 +104,8 @@ class IoTDashboard {
                         position: 'right',
                         title: {
                             display: true,
-                            text: 'Hujan (%)'
+                            text: 'Suhu (°C)'
                         },
-                        min: 0,
-                        max: 100,
                         grid: {
                             drawOnChartArea: false,
                         },
@@ -180,229 +125,543 @@ class IoTDashboard {
         try {
             const response = await fetch(`${this.apiBaseUrl}get_devices.php`);
             const data = await response.json();
-            
+
             if (data.success) {
                 this.devices = data.data;
-                this.updateDeviceSelector();
+                this.createDeviceCards();
             }
         } catch (error) {
             console.error('Error loading devices:', error);
         }
     }
-    
-    updateDeviceSelector() {
-        const deviceSelect = document.getElementById('device-select');
-        deviceSelect.innerHTML = '<option value="all">Semua Device</option>';
+
+    createDeviceCards() {
+        const container = document.getElementById('devices-container');
         
-        this.devices.forEach(device => {
-            const option = document.createElement('option');
-            option.value = device.device_id;
-            option.textContent = `${device.device_name} (${device.location})`;
-            deviceSelect.appendChild(option);
+        // Get all devices from API and serial connections
+        let allDevices = [...this.devices];
+        
+        // Add serial devices that have device info
+        this.connectedSerialPorts.forEach(portInfo => {
+            if (portInfo.deviceInfo) {
+                allDevices.push({
+                    ...portInfo.deviceInfo,
+                    connectionType: 'serial'
+                });
+            }
         });
-    }
-    
-    async fetchLatestData() {
-        try {
-            const deviceParam = this.selectedDevice !== 'all' ? `?device_id=${this.selectedDevice}` : '';
-            const response = await fetch(`${this.apiBaseUrl}get_latest.php${deviceParam}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                if (this.selectedDevice === 'all') {
-                    // Handle multiple devices
-                    this.updateMultiDeviceDisplay(data.data);
-                } else {
-                    // Handle single device
-                    this.updateSensorCards(data.data);
-                    this.updateCharts(data.data);
-                    this.checkAlerts(data.data);
-                }
-                this.updateConnectionStatus(true);
-                this.updateLastUpdateTime();
-                this.hideNoDataMessage();
-            } else {
-                // Handle "no data available" gracefully
-                if (data.message && data.message.toLowerCase().includes('no data available')) {
-                    this.showNoDataMessage();
-                    this.updateConnectionStatus(true); // Server is working, just no data
-                } else {
-                    throw new Error(data.message || 'Failed to fetch data');
-                }
-            }
-        } catch (error) {
-            // Only log actual network/server errors, not "no data" situations
-            if (!error.message.toLowerCase().includes('no data')) {
-                console.warn('Network error fetching latest data:', error.message);
-            }
-            this.updateConnectionStatus(false);
-            this.showNetworkError();
-        }
-    }
 
-    updateSensorCards(data) {
-        // Update device info if single device is selected
-        if (this.selectedDevice !== 'all' && data.device_id) {
-            this.updateDeviceInfo(data);
-        } else {
-            this.hideDeviceInfo();
-        }
-        
-        // Update Distance
-        const distanceElement = document.getElementById('distance-value');
-        const distanceStatusElement = document.getElementById('distance-status');
-        if (data.distance !== null && data.distance >= 0) {
-            distanceElement.textContent = `${data.distance} cm`;
-            distanceStatusElement.textContent = data.distance_status || this.getDistanceStatus(data.distance);
-            distanceStatusElement.className = `sensor-status ${this.getDistanceStatusClass(data.distance)}`;
-        } else {
-            distanceElement.textContent = 'Error';
-            distanceStatusElement.textContent = 'Sensor tidak terbaca';
-            distanceStatusElement.className = 'sensor-status text-danger';
-        }
-
-        // Update Moisture
-        document.getElementById('moisture-value').textContent = `${data.soil_moisture}%`;
-        const moistureStatus = document.getElementById('moisture-status');
-        moistureStatus.textContent = data.moisture_status;
-        moistureStatus.className = `sensor-status status-${data.moisture_status.toLowerCase()}`;
-
-        // Update Temperature
-        const tempElement = document.getElementById('temperature-value');
-        const tempStatusElement = document.getElementById('temperature-status');
-        if (data.temperature !== null) {
-            tempElement.textContent = `${parseFloat(data.temperature).toFixed(1)}°C`;
-            tempStatusElement.textContent = data.temperature_status || this.getTemperatureStatus(data.temperature);
-            tempStatusElement.className = `sensor-status ${this.getTemperatureStatusClass(data.temperature)}`;
-        } else {
-            tempElement.textContent = 'Error';
-            tempStatusElement.textContent = 'Sensor tidak terbaca';
-            tempStatusElement.className = 'sensor-status text-danger';
-        }
-
-        // Update Rain
-        document.getElementById('rain-value').textContent = `${data.rain_percentage}%`;
-        const rainStatus = document.getElementById('rain-status');
-        rainStatus.textContent = data.rain_status;
-        rainStatus.className = `sensor-status status-${data.rain_status.toLowerCase()}`;
-    }
-    
-    updateDeviceInfo(data) {
-        const deviceInfoSection = document.getElementById('device-info-section');
-        const deviceInfo = this.devices.find(d => d.device_id === data.device_id);
-        
-        if (deviceInfo) {
-            document.getElementById('device-info-id').textContent = deviceInfo.device_id;
-            document.getElementById('device-info-name').textContent = deviceInfo.device_name;
-            document.getElementById('device-info-location').textContent = deviceInfo.location || 'Unknown';
-            
-            const connectionBadge = document.getElementById('device-connection-badge');
-            const lastSeenElement = document.getElementById('device-last-seen');
-            
-            // Update connection status
-            if (deviceInfo.connection_status === 'online') {
-                connectionBadge.className = 'badge bg-success';
-                connectionBadge.textContent = 'Online';
-            } else if (deviceInfo.connection_status === 'warning') {
-                connectionBadge.className = 'badge bg-warning';
-                connectionBadge.textContent = 'Warning';
-            } else {
-                connectionBadge.className = 'badge bg-danger';
-                connectionBadge.textContent = 'Offline';
-            }
-            
-            // Update last seen
-            if (deviceInfo.last_reading) {
-                const lastSeenDate = new Date(deviceInfo.last_reading);
-                lastSeenElement.textContent = `Last seen: ${lastSeenDate.toLocaleString('id-ID')}`;
-            } else {
-                lastSeenElement.textContent = 'Last seen: Never';
-            }
-            
-            deviceInfoSection.style.display = 'block';
-        }
-    }
-    
-    hideDeviceInfo() {
-        const deviceInfoSection = document.getElementById('device-info-section');
-        deviceInfoSection.style.display = 'none';
-    }
-    
-    updateMultiDeviceDisplay(devices) {
-        if (!Array.isArray(devices) || devices.length === 0) {
-            this.showNoDataMessage();
+        // If no devices at all, show message
+        if (allDevices.length === 0) {
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-info text-center">
+                        <i class="fas fa-info-circle fs-2 mb-3"></i>
+                        <h5>Belum Ada Device Terhubung</h5>
+                        <p>Pastikan ESP32 terhubung ke WiFi atau gunakan koneksi Serial Port</p>
+                    </div>
+                </div>
+            `;
             return;
         }
-        
-        // Hide device info section for multi-device view
-        this.hideDeviceInfo();
-        
-        // For multi-device, show aggregated or latest data
-        const latestDevice = devices[0]; // Show data from most recent device
-        this.updateSensorCards(latestDevice);
-        this.updateCharts(latestDevice);
-        
-        // Check alerts for all devices
-        devices.forEach(deviceData => {
-            this.checkAlerts(deviceData, deviceData.device_name);
+
+        let cardsHtml = '';
+
+        // Add API devices
+        this.devices.forEach(device => {
+            cardsHtml += this.createDeviceCardHtml(device, 'api');
         });
+
+        // Add serial devices
+        this.connectedSerialPorts.forEach(portInfo => {
+            if (portInfo.deviceInfo) {
+                cardsHtml += this.createDeviceCardHtml(portInfo.deviceInfo, 'serial');
+            }
+        });
+
+        container.innerHTML = cardsHtml;
+        
+        // Initialize mini charts for all devices with longer delay to ensure DOM is ready
+        setTimeout(() => {
+            allDevices.forEach(device => {
+                const deviceId = device.device_id;
+                const canvasElement = document.getElementById(`mini-chart-${deviceId}`);
+                console.log(`Looking for canvas mini-chart-${deviceId}:`, canvasElement);
+                
+                if (canvasElement) {
+                    this.createMiniChart(deviceId);
+                }
+            });
+        }, 300);
     }
 
-    updateCharts(data) {
+    createDeviceCardHtml(device, connectionType) {
+        const deviceId = device.device_id;
+        const data = this.deviceData[deviceId] || {};
+        
+        return `
+            <div class="col-lg-4 col-md-6">
+                <div class="device-card" onclick="window.iotDashboard.showDeviceDetail('${deviceId}')">
+                    <div class="device-card-header">
+                        <div class="device-card-title">
+                            <i class="fas fa-microchip me-2"></i>${device.device_name || 'Unknown Device'}
+                        </div>
+                        <div class="device-card-subtitle">
+                            <i class="fas fa-map-marker-alt me-1"></i>${device.location || 'Unknown Location'}
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">ID: ${deviceId}</small>
+                            <span class="badge ${connectionType === 'serial' ? 'bg-info' : 'bg-success'}" id="status-${deviceId}">
+                                ${connectionType === 'serial' ? 'Serial' : 'Online'}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="device-card-sensors">
+                        <div class="mini-sensor">
+                            <div class="mini-sensor-icon bg-primary">
+                                <i class="fas fa-water"></i>
+                            </div>
+                            <div class="mini-sensor-value" id="card-distance-${deviceId}">${data.distance || '--'} cm</div>
+                            <div class="mini-sensor-label">Jarak Air</div>
+                        </div>
+                        <div class="mini-sensor">
+                            <div class="mini-sensor-icon bg-success">
+                                <i class="fas fa-tint"></i>
+                            </div>
+                            <div class="mini-sensor-value" id="card-moisture-${deviceId}">${data.soil_moisture || '--'}%</div>
+                            <div class="mini-sensor-label">Kelembaban</div>
+                        </div>
+                        <div class="mini-sensor">
+                            <div class="mini-sensor-icon bg-warning">
+                                <i class="fas fa-thermometer-half"></i>
+                            </div>
+                            <div class="mini-sensor-value" id="card-temperature-${deviceId}">${data.temperature || '--'}°C</div>
+                            <div class="mini-sensor-label">Suhu</div>
+                        </div>
+                        <div class="mini-sensor">
+                            <div class="mini-sensor-icon bg-info">
+                                <i class="fas fa-cloud-rain"></i>
+                            </div>
+                            <div class="mini-sensor-value" id="card-rain-${deviceId}">${data.rain_percentage || '--'}%</div>
+                            <div class="mini-sensor-label">Hujan</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mini-chart-container">
+                        <canvas id="mini-chart-${deviceId}" width="400" height="120"></canvas>
+                    </div>
+                    
+                    <div class="device-card-footer">
+                        <small class="text-muted">
+                            Last update: <span id="last-update-${deviceId}">-</span>
+                        </small>
+                        <i class="fas fa-external-link-alt text-primary"></i>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async fetchLatestData() {
+        // Skip API fetch if using serial only
+        if (this.usingSerial && this.connectedSerialPorts.length > 0 && this.devices.length === 0) {
+            this.updateConnectionStatus(true);
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}get_latest.php`);
+            const data = await response.json();
+
+            if (data.success) {
+                if (Array.isArray(data.data)) {
+                    // Handle multiple devices
+                    data.data.forEach(deviceData => {
+                        this.updateDeviceData(deviceData);
+                    });
+                } else if (data.data) {
+                    // Handle single device
+                    this.updateDeviceData(data.data);
+                }
+                this.updateConnectionStatus(true);
+                this.checkAllDeviceAlerts();
+            } else {
+
+                if (this.connectedSerialPorts.length === 0) {
+                    this.showNoDataMessage();
+                }
+                this.updateConnectionStatus(true);
+            }
+        } catch (error) {
+            console.warn('Network error fetching latest data:', error.message);
+            if (this.connectedSerialPorts.length === 0) {
+                this.updateConnectionStatus(false);
+            }
+        }
+    }
+
+    updateDeviceData(data) {
+        const deviceId = data.device_id;
+        this.deviceData[deviceId] = data;
+
+        // Check if card exists, if not recreate cards
+        if (!document.getElementById(`card-distance-${deviceId}`)) {
+            this.createDeviceCards();
+            return;
+        }
+
+        // Update device card
+        this.updateDeviceCard(deviceId, data);
+        
+        // Update mini chart
+        this.updateMiniChart(deviceId, data);
+        
+        // Update modal if it's showing this device
+        if (this.currentModalDeviceId === deviceId) {
+            this.updateModalSensorData(data);
+            this.updateModalChart(deviceId);
+            document.getElementById('modal-last-seen').textContent = 
+                `Last seen: ${new Date().toLocaleString('id-ID')}`;
+        }
+        
+        // Update last update time
+        const lastUpdateElement = document.getElementById(`last-update-${deviceId}`);
+        if (lastUpdateElement) {
+            const now = new Date();
+            lastUpdateElement.textContent = now.toLocaleTimeString('id-ID');
+        }
+        
+        // Update global last update
+        this.updateLastUpdateTime();
+    }
+
+    updateDeviceCard(deviceId, data) {
+        // Update distance
+        const distanceElement = document.getElementById(`card-distance-${deviceId}`);
+        if (distanceElement) {
+            distanceElement.textContent = data.distance !== null ? `${data.distance} cm` : '-- cm';
+        }
+
+        // Update moisture
+        const moistureElement = document.getElementById(`card-moisture-${deviceId}`);
+        if (moistureElement) {
+            moistureElement.textContent = `${data.soil_moisture || '--'}%`;
+        }
+
+        // Update temperature
+        const temperatureElement = document.getElementById(`card-temperature-${deviceId}`);
+        if (temperatureElement) {
+            temperatureElement.textContent = data.temperature !== null ? `${parseFloat(data.temperature).toFixed(1)}°C` : '--°C';
+        }
+
+        // Update rain
+        const rainElement = document.getElementById(`card-rain-${deviceId}`);
+        if (rainElement) {
+            rainElement.textContent = `${data.rain_percentage || '--'}%`;
+        }
+    }
+
+    updateMiniChart(deviceId, data) {
+        if (!this.deviceCharts[deviceId]) {
+            console.log(`Chart for device ${deviceId} not found, creating new one`);
+            this.createMiniChart(deviceId);
+            if (!this.deviceCharts[deviceId]) {
+                console.log(`Failed to create chart for device ${deviceId}`);
+                return;
+            }
+        }
+
+        const chart = this.deviceCharts[deviceId];
         const currentTime = new Date().toLocaleTimeString('id-ID', { 
             hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
+            minute: '2-digit'
         });
 
-        // Update Moisture & Temperature Chart
-        const moistureTempChart = this.charts.moistureTemp;
-        moistureTempChart.data.labels.push(currentTime);
-        moistureTempChart.data.datasets[0].data.push(data.soil_moisture);
-        moistureTempChart.data.datasets[1].data.push(data.temperature);
+        // Add new data point
+        chart.data.labels.push(currentTime);
+        chart.data.datasets[0].data.push(data.soil_moisture || 0);
+        chart.data.datasets[1].data.push(data.temperature || 0);
 
-        // Keep only last 20 data points
-        if (moistureTempChart.data.labels.length > 20) {
-            moistureTempChart.data.labels.shift();
-            moistureTempChart.data.datasets[0].data.shift();
-            moistureTempChart.data.datasets[1].data.shift();
+        // Keep only last 8 data points for mini chart
+        if (chart.data.labels.length > 8) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[1].data.shift();
         }
-        moistureTempChart.update('none');
 
-        // Update Distance & Rain Chart
-        const distanceRainChart = this.charts.distanceRain;
-        distanceRainChart.data.labels.push(currentTime);
-        distanceRainChart.data.datasets[0].data.push(data.distance || 0);
-        distanceRainChart.data.datasets[1].data.push(data.rain_percentage);
-
-        // Keep only last 20 data points
-        if (distanceRainChart.data.labels.length > 20) {
-            distanceRainChart.data.labels.shift();
-            distanceRainChart.data.datasets[0].data.shift();
-            distanceRainChart.data.datasets[1].data.shift();
-        }
-        distanceRainChart.update('none');
+        // Update chart with animation
+        chart.update('active');
+        console.log(`Updated mini chart for device ${deviceId}`);
     }
 
-    checkAlerts(data, deviceName = '') {
+    createMiniChart(deviceId) {
+        const canvas = document.getElementById(`mini-chart-${deviceId}`);
+        if (!canvas) {
+            console.log(`Canvas mini-chart-${deviceId} not found`);
+            return;
+        }
+
+        // Check if chart already exists
+        if (this.deviceCharts[deviceId]) {
+            this.deviceCharts[deviceId].destroy();
+        }
+
+        const ctx = canvas.getContext('2d');
+        
+        // Generate some initial data points for demonstration
+        const initialLabels = [];
+        const initialMoistureData = [];
+        const initialTempData = [];
+        
+        for (let i = 5; i >= 0; i--) {
+            const time = new Date();
+            time.setMinutes(time.getMinutes() - i);
+            initialLabels.push(time.toLocaleTimeString('id-ID', { 
+                hour: '2-digit', 
+                minute: '2-digit'
+            }));
+            
+            // Use current device data or generate sample data
+            const currentData = this.deviceData[deviceId];
+            if (currentData && i === 0) {
+                initialMoistureData.push(currentData.soil_moisture || 0);
+                initialTempData.push(currentData.temperature || 0);
+            } else {
+                // Generate sample data with some variation
+                const baseMoisture = currentData?.soil_moisture || 50;
+                const baseTemp = currentData?.temperature || 25;
+                initialMoistureData.push(baseMoisture + (Math.random() - 0.5) * 10);
+                initialTempData.push(baseTemp + (Math.random() - 0.5) * 5);
+            }
+        }
+        
+        this.deviceCharts[deviceId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: initialLabels,
+                datasets: [{
+                    label: 'Kelembaban',
+                    data: initialMoistureData,
+                    borderColor: '#198754',
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.4
+                }, {
+                    label: 'Suhu',
+                    data: initialTempData,
+                    borderColor: '#ffc107',
+                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 300
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false,
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        display: false,
+                        grid: {
+                            display: false
+                        },
+                        min: 0,
+                        max: 100
+                    }
+                },
+                elements: {
+                    point: {
+                        radius: 2,
+                        hoverRadius: 4
+                    }
+                }
+            }
+        });
+
+        console.log(`Mini chart created for device ${deviceId}`);
+    }
+
+    showDeviceDetail(deviceId) {
+        const device = this.devices.find(d => d.device_id === deviceId) || 
+                     this.connectedSerialPorts.find(p => p.deviceInfo?.device_id === deviceId)?.deviceInfo;
+        
+        if (!device) return;
+
+        const data = this.deviceData[deviceId] || {};
+        
+        // Store current modal device for real-time updates
+        this.currentModalDeviceId = deviceId;
+        
+        // Update modal content
+        document.getElementById('deviceDetailModalLabel').innerHTML = 
+            `<i class="fas fa-microchip me-2"></i>${device.device_name || 'Device Detail'}`;
+        
+        document.getElementById('modal-device-id').textContent = deviceId;
+        document.getElementById('modal-device-name').textContent = device.device_name || 'Unknown';
+        document.getElementById('modal-device-location').textContent = device.location || 'Unknown';
+        
+        // Update connection status in modal
+        const isSerial = this.connectedSerialPorts.some(p => p.deviceInfo?.device_id === deviceId);
+        const connectionBadge = document.getElementById('modal-connection-badge');
+        if (isSerial) {
+            connectionBadge.className = 'badge bg-info';
+            connectionBadge.textContent = 'Serial Connection';
+        } else {
+            connectionBadge.className = 'badge bg-success';
+            connectionBadge.textContent = 'WiFi Connection';
+        }
+        
+        document.getElementById('modal-last-seen').textContent = 
+            `Last seen: ${new Date().toLocaleString('id-ID')}`;
+
+        // Update sensor data in modal
+        this.updateModalSensorData(data);
+        
+        // Update modal chart
+        this.updateModalChart(deviceId);
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('deviceDetailModal'));
+        modal.show();
+        
+        // Clear modal device when modal is hidden
+        const modalElement = document.getElementById('deviceDetailModal');
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            this.currentModalDeviceId = null;
+        }, { once: true });
+    }
+
+    updateModalSensorData(data) {
+        // Distance
+        const distanceElement = document.getElementById('modal-distance-value');
+        const distanceStatusElement = document.getElementById('modal-distance-status');
+        if (data.distance !== null && data.distance !== undefined) {
+            distanceElement.textContent = `${data.distance} cm`;
+            distanceStatusElement.textContent = this.getDistanceStatus(data.distance);
+            distanceStatusElement.className = `sensor-status ${this.getDistanceStatusClass(data.distance)}`;
+        } else {
+            distanceElement.textContent = '-- cm';
+            distanceStatusElement.textContent = 'No data';
+            distanceStatusElement.className = 'sensor-status text-muted';
+        }
+
+        // Moisture
+        document.getElementById('modal-moisture-value').textContent = `${data.soil_moisture || '--'}%`;
+        const moistureStatus = document.getElementById('modal-moisture-status');
+        moistureStatus.textContent = data.moisture_status || 'No data';
+        moistureStatus.className = `sensor-status ${data.moisture_status ? 'status-' + data.moisture_status.toLowerCase() : 'text-muted'}`;
+
+        // Temperature
+        const tempElement = document.getElementById('modal-temperature-value');
+        const tempStatusElement = document.getElementById('modal-temperature-status');
+        if (data.temperature !== null && data.temperature !== undefined) {
+            tempElement.textContent = `${parseFloat(data.temperature).toFixed(1)}°C`;
+            tempStatusElement.textContent = this.getTemperatureStatus(data.temperature);
+            tempStatusElement.className = `sensor-status ${this.getTemperatureStatusClass(data.temperature)}`;
+        } else {
+            tempElement.textContent = '--°C';
+            tempStatusElement.textContent = 'No data';
+            tempStatusElement.className = 'sensor-status text-muted';
+        }
+
+        // Rain
+        document.getElementById('modal-rain-value').textContent = `${data.rain_percentage || '--'}%`;
+        const rainStatus = document.getElementById('modal-rain-status');
+        rainStatus.textContent = data.rain_status || 'No data';
+        rainStatus.className = `sensor-status ${data.rain_status ? 'status-' + data.rain_status.toLowerCase() : 'text-muted'}`;
+    }
+
+    updateModalChart(deviceId) {
+        const deviceChart = this.deviceCharts[deviceId];
+        if (!deviceChart) return;
+
+        const modalChart = this.charts.modal;
+        const currentData = this.deviceData[deviceId];
+        
+        // Copy data from device chart to modal chart
+        modalChart.data.labels = [...deviceChart.data.labels];
+        modalChart.data.datasets[0].data = [...deviceChart.data.datasets[0].data]; // Moisture
+        modalChart.data.datasets[1].data = [...deviceChart.data.datasets[1].data]; // Temperature
+        
+        // Use real data for distance and rain
+        modalChart.data.datasets[2].data = modalChart.data.labels.map((_, index) => {
+            // Use actual distance data if available, otherwise use current value
+            if (index === modalChart.data.labels.length - 1 && currentData) {
+                return currentData.distance || 0;
+            }
+            return deviceChart.data.datasets[2] ? deviceChart.data.datasets[2].data[index] || 0 : 0;
+        });
+        
+        modalChart.data.datasets[3].data = modalChart.data.labels.map((_, index) => {
+            // Use actual rain data if available, otherwise use current value
+            if (index === modalChart.data.labels.length - 1 && currentData) {
+                return currentData.rain_percentage || 0;
+            }
+            return deviceChart.data.datasets[3] ? deviceChart.data.datasets[3].data[index] || 0 : 0;
+        });
+        
+        modalChart.update('none');
+    }
+
+    checkAllDeviceAlerts() {
         const alerts = [];
-        const devicePrefix = deviceName ? `[${deviceName}] ` : '';
+        
+        Object.keys(this.deviceData).forEach(deviceId => {
+            const data = this.deviceData[deviceId];
+            const device = this.devices.find(d => d.device_id === deviceId) || 
+                         this.connectedSerialPorts.find(p => p.deviceInfo?.device_id === deviceId)?.deviceInfo;
+            const deviceName = device?.device_name || deviceId;
+            
+            alerts.push(...this.getDeviceAlerts(data, deviceName));
+        });
+        
+        this.displayAlerts(alerts);
+    }
+
+    getDeviceAlerts(data, deviceName) {
+        const alerts = [];
+        const devicePrefix = `[${deviceName}] `;
 
         // Check distance alert
-        if (data.distance !== null) {
+        if (data.distance !== null && data.distance !== undefined) {
             if (data.distance < this.alertThresholds.distance.min) {
                 alerts.push({
                     type: 'danger',
                     icon: 'fas fa-exclamation-triangle',
                     title: `${devicePrefix}Peringatan: Level Air Tinggi`,
                     message: `Jarak air hanya ${data.distance} cm. Segera periksa sistem drainase.`
-                });
-            } else if (data.distance > this.alertThresholds.distance.max) {
-                alerts.push({
-                    type: 'warning',
-                    icon: 'fas fa-exclamation-circle',
-                    title: `${devicePrefix}Peringatan: Level Air Rendah`,
-                    message: `Jarak air ${data.distance} cm. Pertimbangkan untuk menambah irigasi.`
                 });
             }
         }
@@ -417,41 +676,12 @@ class IoTDashboard {
             });
         }
 
-        // Check temperature alert
-        if (data.temperature !== null) {
-            if (data.temperature > this.alertThresholds.temperature.max) {
-                alerts.push({
-                    type: 'danger',
-                    icon: 'fas fa-thermometer-full',
-                    title: `${devicePrefix}Peringatan: Suhu Tinggi`,
-                    message: `Suhu udara ${data.temperature}°C. Pastikan tanaman mendapat perlindungan.`
-                });
-            } else if (data.temperature < this.alertThresholds.temperature.min) {
-                alerts.push({
-                    type: 'info',
-                    icon: 'fas fa-thermometer-empty',
-                    title: `${devicePrefix}Info: Suhu Rendah`,
-                    message: `Suhu udara ${data.temperature}°C. Monitor pertumbuhan tanaman.`
-                });
-            }
-        }
-
-        // Check rain alert
-        if (data.rain_percentage > this.alertThresholds.rain.max) {
-            alerts.push({
-                type: 'info',
-                icon: 'fas fa-cloud-rain',
-                title: `${devicePrefix}Info: Hujan Terdeteksi`,
-                message: `Intensitas hujan ${data.rain_percentage}%. Sistem irigasi dapat dikurangi.`
-            });
-        }
-
-        this.displayAlerts(alerts);
+        return alerts;
     }
 
     displayAlerts(alerts) {
         const container = document.getElementById('alerts-container');
-        
+
         if (alerts.length === 0) {
             container.innerHTML = '<div class="text-muted text-center">Tidak ada alert saat ini</div>';
             return;
@@ -511,34 +741,13 @@ class IoTDashboard {
     }
 
     startRealTimeUpdates() {
-        // Show initial loading state
-        this.showNoDataMessage();
-        
-        // Initial fetch
         this.fetchLatestData();
-        
-        // Set interval for updates
         this.updateTimer = setInterval(() => {
             this.fetchLatestData();
         }, this.updateInterval);
     }
 
     setupEventListeners() {
-        // Device selector change
-        document.getElementById('device-select').addEventListener('change', (e) => {
-            this.selectedDevice = e.target.value;
-            this.fetchLatestData(); // Immediate fetch when device changes
-        });
-        
-        // Serial port button
-        document.getElementById('serial-connect-btn').addEventListener('click', () => {
-            if (this.serialConnected) {
-                this.disconnectSerial();
-            } else {
-                this.connectSerial();
-            }
-        });
-
         // Handle page visibility change to pause/resume updates
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -557,7 +766,6 @@ class IoTDashboard {
     }
 
     showNoDataMessage() {
-        // Show friendly message when no data is available
         const container = document.getElementById('alerts-container');
         const noDataAlert = `
             <div class="alert alert-info border-0 shadow-sm" role="alert">
@@ -565,107 +773,54 @@ class IoTDashboard {
                     <div class="text-center w-100">
                         <i class="fas fa-info-circle fs-2 mb-3 text-primary"></i>
                         <h5 class="mb-2">Menunggu Data Sensor</h5>
-                        <p class="mb-0">Belum ada ESP32 yang terhubung atau mengirim data. Pastikan:</p>
-                        <small class="text-muted">
-                            • ESP32 terhubung ke WiFi<br>
-                            • Konfigurasi server URL sudah benar<br>
-                            • Sensor berfungsi dengan normal
-                        </small>
+                        <p class="mb-0">Belum ada data terbaru dari device. Pastikan ESP32 terhubung dengan baik.</p>
                     </div>
                 </div>
             </div>
         `;
         container.innerHTML = noDataAlert;
-        
-        // Clear sensor cards with placeholder data
-        this.showPlaceholderData();
-    }
-    
-    showPlaceholderData() {
-        // Show placeholder values in sensor cards
-        document.getElementById('distance-value').textContent = '--';
-        document.getElementById('distance-status').textContent = 'Menunggu data...';
-        document.getElementById('distance-status').className = 'sensor-status text-muted';
-        
-        document.getElementById('moisture-value').textContent = '--';
-        document.getElementById('moisture-status').textContent = 'Menunggu data...';
-        document.getElementById('moisture-status').className = 'sensor-status text-muted';
-        
-        document.getElementById('temperature-value').textContent = '--';
-        document.getElementById('temperature-status').textContent = 'Menunggu data...';
-        document.getElementById('temperature-status').className = 'sensor-status text-muted';
-        
-        document.getElementById('rain-value').textContent = '--';
-        document.getElementById('rain-status').textContent = 'Menunggu data...';
-        document.getElementById('rain-status').className = 'sensor-status text-muted';
-    }
-    
-    hideNoDataMessage() {
-        // Clear the no-data message when real data is available
-        const container = document.getElementById('alerts-container');
-        container.innerHTML = '<div class="text-muted text-center">Tidak ada alert saat ini</div>';
-    }
-    
-    showNetworkError() {
-        // Show network/server error
-        const alertsContainer = document.getElementById('alerts-container');
-        const errorAlert = `
-            <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                <strong>Koneksi Bermasalah:</strong> Tidak dapat mengambil data sensor. Periksa koneksi internet atau server.
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
-        alertsContainer.innerHTML = errorAlert;
     }
 
     // Serial Communication Methods
-    async connectSerial() {
-        // Check if Web Serial API is supported
+    
+
+    async addSerialPort() {
         if (!('serial' in navigator)) {
             this.showSerialNotSupported();
             return;
         }
 
         try {
-            // Request port access
-            this.serialPort = await navigator.serial.requestPort();
-            
-            // Open port with appropriate settings for ESP32
-            await this.serialPort.open({ 
+            const port = await navigator.serial.requestPort();
+            await port.open({ 
                 baudRate: 115200,
                 dataBits: 8,
                 stopBits: 1,
                 parity: 'none'
             });
 
-            this.serialConnected = true;
-            this.usingSerial = true;
-            
-            // Update UI
-            document.getElementById('serial-status').classList.remove('d-none');
-            document.getElementById('serial-status').innerHTML = '<i class="fas fa-usb"></i> Serial: Connected';
-            document.getElementById('serial-status').className = 'badge bg-success';
-            document.getElementById('serial-connect-btn').innerHTML = '<i class="fas fa-plug"></i> <span class="btn-label">Disconnect</span>';
-            
-            // Stop web updates and start reading serial
-            if (this.updateTimer) {
-                clearInterval(this.updateTimer);
-            }
-            
-            this.startSerialReading();
-            
+            const portInfo = {
+                port: port,
+                reader: null,
+                decoder: new TextDecoderStream(),
+                id: `port_${Date.now()}`,
+                deviceInfo: null
+            };
+
+            this.connectedSerialPorts.push(portInfo);
+            this.updateSerialPortUI();
+            this.startSerialReadingForPort(portInfo);
+
         } catch (error) {
-            // Handle user cancellation gracefully
             if (error.name === 'NotFoundError') {
                 console.log('User cancelled serial port selection');
             } else {
-                console.warn('Serial connection failed:', error.message);
+                console.warn('Additional serial connection failed:', error.message);
                 this.showSerialError(error.message);
             }
         }
     }
-    
+
     showSerialNotSupported() {
         const alertsContainer = document.getElementById('alerts-container');
         const alert = `
@@ -677,7 +832,7 @@ class IoTDashboard {
         `;
         alertsContainer.innerHTML = alert;
     }
-    
+
     showSerialError(message) {
         const alertsContainer = document.getElementById('alerts-container');
         const alert = `
@@ -692,104 +847,186 @@ class IoTDashboard {
 
     async disconnectSerial() {
         try {
-            if (this.serialReader) {
-                await this.serialReader.cancel();
-                this.serialReader.releaseLock();
+            for (const portInfo of this.connectedSerialPorts) {
+                if (portInfo.reader) {
+                    await portInfo.reader.cancel();
+                    portInfo.reader.releaseLock();
+                }
+                if (portInfo.port) {
+                    await portInfo.port.close();
+                }
             }
-            
-            if (this.serialPort) {
-                await this.serialPort.close();
-            }
-            
+
             this.serialConnected = false;
             this.usingSerial = false;
-            this.serialPort = null;
-            this.serialReader = null;
-            
-            // Update UI
-            document.getElementById('serial-status').classList.add('d-none');
-            document.getElementById('serial-connect-btn').innerHTML = '<i class="fas fa-plug"></i> <span class="btn-label">Serial Port</span>';
-            
-            // Resume IoT updates
+            this.connectedSerialPorts = [];
+            this.currentSerialDevice = null;
+
+            this.updateSerialPortUI();
+            this.createDeviceCards(); // Refresh cards
             this.startRealTimeUpdates();
-            
+
         } catch (error) {
             console.error('Serial disconnection error:', error);
         }
     }
 
-    async startSerialReading() {
-        if (!this.serialPort) return;
-        
+    updateSerialPortUI() {
+        // No UI updates needed since we removed the port badges
+        this.serialConnected = this.connectedSerialPorts.length > 0;
+    }
+
+    async startSerialReadingForPort(portInfo) {
+        if (!portInfo.port) return;
+
         try {
-            const textDecoder = new TextDecoderStream();
-            const readableStreamClosed = this.serialPort.readable.pipeTo(textDecoder.writable);
-            this.serialReader = textDecoder.readable.getReader();
-            
+            const readableStreamClosed = portInfo.port.readable.pipeTo(portInfo.decoder.writable);
+            portInfo.reader = portInfo.decoder.readable.getReader();
+
             let buffer = '';
-            
-            while (this.serialConnected) {
-                const { value, done } = await this.serialReader.read();
+
+            while (this.serialConnected && this.connectedSerialPorts.includes(portInfo)) {
+                const { value, done } = await portInfo.reader.read();
                 if (done) break;
-                
+
                 buffer += value;
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
-                
+
                 for (const line of lines) {
-                    this.parseSerialData(line.trim());
+                    this.parseSerialData(line.trim(), portInfo);
                 }
             }
         } catch (error) {
-            console.error('Serial reading error:', error);
-            if (this.serialConnected) {
-                this.disconnectSerial();
-            }
+            console.error('Serial reading error for port:', error);
+            this.disconnectSpecificPort(portInfo.id);
         }
     }
 
-    parseSerialData(line) {
+    async disconnectSpecificPort(portId) {
+        const portIndex = this.connectedSerialPorts.findIndex(p => p.id === portId);
+        if (portIndex === -1) return;
+
+        const portInfo = this.connectedSerialPorts[portIndex];
+
         try {
-            // Look for JSON data in the serial output
+            if (portInfo.reader) {
+                await portInfo.reader.cancel();
+                portInfo.reader.releaseLock();
+            }
+            if (portInfo.port) {
+                await portInfo.port.close();
+            }
+        } catch (error) {
+            console.error('Error disconnecting specific port:', error);
+        }
+
+        this.connectedSerialPorts.splice(portIndex, 1);
+        this.updateSerialPortUI();
+        this.createDeviceCards(); // Refresh cards
+
+        if (this.connectedSerialPorts.length === 0) {
+            this.serialConnected = false;
+            this.usingSerial = false;
+            this.currentSerialDevice = null;
+            this.startRealTimeUpdates();
+        }
+    }
+
+    parseSerialData(line, portInfo) {
+        try {
+            // Look for device info header first
+            if (line.includes('===') && line.includes('Sensor Readings')) {
+                const deviceIdMatch = line.match(/===\s*([A-Z0-9_]+)\s+Sensor Readings\s*===/);
+                if (deviceIdMatch) {
+                    // Initialize device info if not exists
+                    if (!portInfo.deviceInfo) {
+                        portInfo.deviceInfo = {
+                            device_id: deviceIdMatch[1].trim(),
+                            device_name: 'Unknown Device',
+                            location: 'Unknown Location',
+                            connection_status: 'online'
+                        };
+                    } else {
+                        portInfo.deviceInfo.device_id = deviceIdMatch[1].trim();
+                    }
+                }
+                return;
+            }
+
+            // Parse JSON data
             if (line.includes('{') && line.includes('}')) {
                 const jsonStart = line.indexOf('{');
                 const jsonEnd = line.lastIndexOf('}') + 1;
                 const jsonStr = line.substring(jsonStart, jsonEnd);
-                
+
                 const data = JSON.parse(jsonStr);
-                
-                // Convert to expected format
+
+                // Use device info from ESP32 data
                 const sensorData = {
-                    distance: data.distance || null,
+                    device_id: data.device_id || `SERIAL_${portInfo.id}`,
+                    device_name: data.device_name || 'Unknown Device',
+                    device_location: data.device_location || 'Unknown Location',
+                    distance: data.distance !== undefined ? data.distance : null,
                     soil_moisture: data.soil_moisture || 0,
                     moisture_status: data.moisture_status || 'Unknown',
-                    temperature: data.temperature || null,
+                    temperature: data.temperature !== undefined ? data.temperature : null,
                     rain_percentage: data.rain_percentage || 0,
                     rain_status: data.rain_status || 'Unknown'
                 };
-                
-                this.updateSensorCards(sensorData);
-                this.updateCharts(sensorData);
-                this.checkAlerts(sensorData);
-                this.updateLastUpdateTime();
-                
-                // Update connection status
+
+                // Update device info from ESP32 data
+                portInfo.deviceInfo = {
+                    device_id: sensorData.device_id,
+                    device_name: sensorData.device_name,
+                    location: sensorData.device_location,
+                    connection_status: 'online'
+                };
+
+                this.currentSerialDevice = portInfo.deviceInfo;
+                this.updateDeviceData(sensorData);
                 this.updateConnectionStatus(true);
                 
+                // Recreate cards if device info changed
+                this.createDeviceCards();
+
             } else if (line.includes('Distance:') || line.includes('Soil Moisture:')) {
-                // Parse text format data
-                this.parseTextSerialData(line);
+                this.parseTextSerialData(line, portInfo);
             }
         } catch (error) {
             console.error('Error parsing serial data:', error);
         }
     }
 
-    parseTextSerialData(line) {
-        // Parse the text format from ESP32 serial output
-        // Example: "Distance: 25 cm, Soil Moisture: 45% (Cukup), Temperature: 28.5°C, Rain: 10% (Kering)"
-        
+    parseTextSerialData(line, portInfo) {
+        // Similar to previous implementation but now updates device data
+        if (line.includes('===') && line.includes('(') && line.includes(')')) {
+            const deviceNameMatch = line.match(/===\s*([^(]+)\s*\(([^)]+)\)\s*===/);
+            if (deviceNameMatch) {
+                portInfo.deviceInfo = {
+                    device_name: deviceNameMatch[1].trim(),
+                    device_id: deviceNameMatch[2].trim(),
+                    location: 'Serial Connection',
+                    connection_status: 'online'
+                };
+                this.currentSerialDevice = portInfo.deviceInfo;
+            }
+            return;
+        }
+
+        if (line.startsWith('Location:')) {
+            const locationMatch = line.match(/Location:\s*(.+)/);
+            if (locationMatch && portInfo.deviceInfo) {
+                portInfo.deviceInfo.location = locationMatch[1].trim();
+            }
+            return;
+        }
+
+        const deviceInfo = portInfo.deviceInfo || this.currentSerialDevice;
         const sensorData = {
+            device_id: deviceInfo?.device_id || `SERIAL_${portInfo.id}`,
+            device_name: deviceInfo?.device_name || `Serial Device ${this.connectedSerialPorts.indexOf(portInfo) + 1}`,
+            device_location: deviceInfo?.location || 'Serial Connection',
             distance: null,
             soil_moisture: 0,
             moisture_status: 'Unknown',
@@ -797,61 +1034,36 @@ class IoTDashboard {
             rain_percentage: 0,
             rain_status: 'Unknown'
         };
-        
-        // Extract distance
+
+        // Parse sensor values (same as before)
         const distanceMatch = line.match(/Distance:\s*(\d+)\s*cm/);
         if (distanceMatch) {
             sensorData.distance = parseInt(distanceMatch[1]);
         }
-        
-        // Extract soil moisture
+
         const moistureMatch = line.match(/Soil Moisture:\s*(\d+)%\s*\(([^)]+)\)/);
         if (moistureMatch) {
             sensorData.soil_moisture = parseInt(moistureMatch[1]);
             sensorData.moisture_status = moistureMatch[2];
         }
-        
-        // Extract temperature
+
         const tempMatch = line.match(/Temperature:\s*([0-9.]+)°C/);
         if (tempMatch) {
             sensorData.temperature = parseFloat(tempMatch[1]);
         }
-        
-        // Extract rain
+
         const rainMatch = line.match(/Rain:\s*(\d+)%\s*\(([^)]+)\)/);
         if (rainMatch) {
             sensorData.rain_percentage = parseInt(rainMatch[1]);
             sensorData.rain_status = rainMatch[2];
         }
-        
-        this.updateSensorCards(sensorData);
-        this.updateCharts(sensorData);
-        this.checkAlerts(sensorData);
-        this.updateLastUpdateTime();
+
+        this.updateDeviceData(sensorData);
         this.updateConnectionStatus(true);
+        this.updateSerialPortUI();
     }
 }
 
-// Global functions
-function toggleSerialConnection() {
-    const dashboard = window.iotDashboard;
-    if (dashboard.serialConnected) {
-        dashboard.disconnectSerial();
-    } else {
-        dashboard.connectSerial();
-    }
-}
-
-function changeDevice() {
-    const dashboard = window.iotDashboard;
-    const deviceSelect = document.getElementById('device-select');
-    dashboard.selectedDevice = deviceSelect.value;
-    
-    // Immediately fetch data for the new device selection
-    dashboard.fetchLatestData();
-}
-
-// Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.iotDashboard = new IoTDashboard();
 });

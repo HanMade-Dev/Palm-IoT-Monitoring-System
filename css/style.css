@@ -166,6 +166,34 @@ body {
     font-size: 0.875rem;
 }
 
+/* Multi-port serial styling */
+#serial-ports-list {
+    max-width: 300px;
+}
+
+#serial-ports-list .badge {
+    position: relative;
+    padding-right: 2rem;
+}
+
+#serial-ports-list .btn-close {
+    position: absolute;
+    right: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0;
+    width: 1rem;
+    height: 1rem;
+    background-size: 0.8rem;
+}
+
+.connection-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 #device-info-section .card {
     border: 1px solid #dee2e6;
     box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
@@ -174,6 +202,120 @@ body {
 #device-info-section .fw-bold {
     font-weight: 600;
     color: #495057;
+}
+
+/* Device Cards */
+.device-card {
+    background: white;
+    border-radius: 15px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    height: 100%;
+}
+
+.device-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+    border-color: var(--primary-color);
+}
+
+.device-card-header {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.mini-chart-container {
+    position: relative;
+    height: 120px;
+    margin: 1rem 0;
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.mini-chart-container canvas {
+    border-radius: 6px;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.device-card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.25rem;
+}
+
+.device-card-subtitle {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.device-card-sensors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.mini-sensor {
+    text-align: center;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.mini-sensor-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.5rem;
+}
+
+.mini-sensor-icon i {
+    font-size: 1rem;
+    color: white;
+}
+
+.mini-sensor-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #212529;
+    margin-bottom: 0.25rem;
+}
+
+.mini-sensor-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mini-chart-container {
+    height: 120px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.device-card-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    padding-top: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 /* Status Indicator */
@@ -360,7 +502,6 @@ canvas {
     }
 }
 
-/* Force light theme - no dark mode */
 body {
     background-color: #f8f9fa !important;
     color: #212529 !important;
