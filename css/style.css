@@ -310,6 +310,65 @@ body {
     justify-content: center;
 }
 
+/* Analytics Styles */
+.analytics-item {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+}
+
+.analytics-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.analytics-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0;
+}
+
+/* Device Form Styles */
+.form-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.form-control:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+}
+
+.form-text {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+/* Code output styles */
+#espCodeOutput {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    font-family: 'Courier New', monospace;
+    line-height: 1.4;
+}
+
+/* Device status indicator */
+.device-status-online {
+    color: #28a745;
+}
+
+.device-status-offline {
+    color: #dc3545;
+}
+
+.device-status-warning {
+    color: #ffc107;
+}
+
 .device-card-footer {
     border-top: 1px solid rgba(0, 0, 0, 0.1);
     padding-top: 1rem;

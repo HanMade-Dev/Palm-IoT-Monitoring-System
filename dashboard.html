@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - IoT Monitoring Kelapa Sawit</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23228B22' d='M50 10c-5 0-10 2-15 5-3 2-5 5-7 8-2 4-3 8-3 12 0 8 3 15 8 20 3 3 7 5 11 6v25c0 3 2 5 5 5s5-2 5-5V61c4-1 8-3 11-6 5-5 8-12 8-20 0-4-1-8-3-12-2-3-4-6-7-8-5-3-10-5-15-5z'/%3E%3Cpath fill='%2332CD32' d='M30 25c-3 0-5 1-7 3-2 2-3 4-3 7 0 4 2 7 5 9 2 1 4 2 6 2v15c0 2 1 3 3 3s3-1 3-3V46c2 0 4-1 6-2 3-2 5-5 5-9 0-3-1-5-3-7-2-2-4-3-7-3h-8z'/%3E%3Cpath fill='%2332CD32' d='M70 25c-3 0-5 1-7 3-2 2-3 4-3 7 0 4 2 7 5 9 2 1 4 2 6 2v15c0 2 1 3 3 3s3-1 3-3V46c2 0 4-1 6-2 3-2 5-5 5-9 0-3-1-5-3-7-2-2-4-3-7-3h-8z'/%3E%3Ccircle fill='%23FF6B35' cx='50' cy='75' r='8'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23228B22' d='M50 10c-5 0-10 2-15 5-3 2-5 5-7 8-2 4-3 8-3 12 0 8 3 15 8 20 3 3 7 5 11 6v25c0 3 2 5 5 5s5-2 5-5V61c4-1 8-3 11-6 5-5 8-12 8-20 0-4-1-8-3-12-2-3-4-6-7-8-5-3-10-5-15-5z'/%3E%3Cpath fill='%2332CD32' d='M30 25c-3 0-5 1-7 3-2 2-3 4-3 7 0 4 2 7 5 9 2 1 4 2 6 2v15c0 2 1 3 3 3s3-1 3-3V46c2 0 4-1 6-2 3-2 5-5 5-9 0-3-1-5-3-7-2-2-4-3-7-3h-8z'/%3E%3Cpath fill='%2332CD32' d='M70 25c-3 0-5 1-7 3-2 2-3 4-3 7 0 4 2 7 5 9 2 1 4 2 6 2v15c0 2 1 3 3 3s3-1 3-3V46c2 0 4-1 6-2 3-2 5-5 5-9 0-3-1-5-3-7-2-2-4-3-7-3h-8z'/%3E%3Ccircle fill='%23FF6B35' cx='50' cy='75' r='8'/%3E%3C/svg%3E">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="css/style.css" rel="stylesheet">
@@ -40,9 +44,12 @@
                     <h2><i class="fas fa-chart-line"></i> Dashboard Real-time</h2>
                     <div class="d-flex align-items-center gap-3">
                         <div class="connection-options">
-                            <button class="btn btn-outline-success btn-sm" onclick="window.iotDashboard.addSerialPort()">
+                            <button class="btn btn-outline-success btn-sm me-2" onclick="window.iotDashboard.addSerialPort()">
                                 <i class="fas fa-plus me-1"></i>
                                 Add Port
+                            </button>
+                            <button type="button" class="btn btn-success" onclick="window.iotDashboard.showManageDeviceModal()">
+                                <i class="fas fa-cogs"></i> Manage Device
                             </button>
                         </div>
                         <div class="status-indicator">
@@ -174,6 +181,90 @@
                         </div>
                     </div>
 
+                    <!-- Analytics Summary -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-chart-bar"></i> Analisis Data
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-primary mb-3">
+                                        <i class="fas fa-tint me-2"></i>Kelembaban Tanah
+                                    </h6>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Minimum</div>
+                                                <div class="analytics-value text-danger" id="moisture-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Rata-rata</div>
+                                                <div class="analytics-value text-primary" id="moisture-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Maksimum</div>
+                                                <div class="analytics-value text-success" id="moisture-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-warning mb-3">
+                                        <i class="fas fa-thermometer-half me-2"></i>Suhu Udara
+                                    </h6>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Minimum</div>
+                                                <div class="analytics-value text-info" id="temperature-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Rata-rata</div>
+                                                <div class="analytics-value text-warning" id="temperature-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Maksimum</div>
+                                                <div class="analytics-value text-danger" id="temperature-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr class="my-3">
+                            <div class="row text-center">
+                                <div class="col-md-4">
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Total Pembacaan</div>
+                                        <div class="analytics-value text-info" id="total-readings">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Data Points</div>
+                                        <div class="analytics-value text-secondary" id="data-points">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Rentang Waktu</div>
+                                        <div class="analytics-value text-muted" id="time-span">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Chart -->
                     <div class="card">
                         <div class="card-header">
@@ -189,6 +280,171 @@
             </div>
         </div>
     </div>
+
+    <!-- Manage Device Modal -->
+    <div class="modal fade" id="manageDeviceModal" tabindex="-1" aria-labelledby="manageDeviceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manageDeviceModalLabel">
+                        <i class="fas fa-cogs me-2"></i>Kelola Perangkat
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Device Management Tabs -->
+                    <ul class="nav nav-tabs" id="deviceManagementTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="device-list-tab" data-bs-toggle="tab" data-bs-target="#device-list" type="button" role="tab">
+                                <i class="fas fa-list"></i> Daftar Device
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="add-device-tab" data-bs-toggle="tab" data-bs-target="#add-device" type="button" role="tab">
+                                <i class="fas fa-plus"></i> Tambah Device
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content mt-3" id="deviceManagementTabContent">
+                        <!-- Device List Tab -->
+                        <div class="tab-pane fade show active" id="device-list" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Device ID</th>
+                                            <th>Nama</th>
+                                            <th>Lokasi</th>
+                                            <th>Status</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="deviceManagementList">
+                                        <tr>
+                                            <td colspan="5" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Add Device Tab -->
+                        <div class="tab-pane fade" id="add-device" role="tabpanel">
+                            <form id="addDeviceForm">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="deviceId" class="form-label">Device ID <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="deviceId" placeholder="contoh: ESP32_SAWIT_04" required
+                                                pattern="[A-Za-z0-9_]+" title="Hanya huruf, angka, dan underscore yang diperbolehkan">
+                                            <div class="form-text">Device ID harus unik dan tidak boleh diubah setelah dibuat</div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="deviceName" class="form-label">Nama Device <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="deviceName" placeholder="contoh: Sensor Area Selatan" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="deviceLocation" class="form-label">Lokasi</label>
+                                            <input type="text" class="form-control" id="deviceLocation" placeholder="contoh: Kebun Blok A">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="deviceDescription" class="form-label">Deskripsi</label>
+                                            <textarea class="form-control" id="deviceDescription" rows="3" 
+                                                placeholder="Deskripsi optional tentang device ini"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <button type="button" class="btn btn-primary" onclick="window.iotDashboard.addDevice()">
+                                        <i class="fas fa-plus me-1"></i>Tambah Device
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Success State -->
+                            <div id="addDeviceSuccess" class="d-none">
+                                <div class="alert alert-success">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    <strong>Device berhasil ditambahkan!</strong>
+                                    Device ID: <span id="successDeviceId"></span>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Kode ESP32 untuk Device Ini:</label>
+                                    <div class="bg-dark text-light p-3 rounded" style="font-family: 'Courier New', monospace; font-size: 12px; max-height: 300px; overflow-y: auto;">
+                                        <pre id="generatedEspCode"></pre>
+                                    </div>
+                                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="window.iotDashboard.copyEspCode()">
+                                        <i class="fas fa-copy"></i> Salin Kode
+                                    </button>
+                                </div>
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Langkah selanjutnya:</strong>
+                                    <ol class="mb-0 mt-2">
+                                        <li>Salin kode di atas ke Arduino IDE</li>
+                                        <li>Ganti YOUR_WIFI_SSID dan YOUR_WIFI_PASSWORD dengan kredensial WiFi Anda</li>
+                                        <li>Upload kode ke ESP32 Anda</li>
+                                        <li>Device akan otomatis muncul di dashboard setelah mengirim data</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Device Modal -->
+    <div class="modal fade" id="editDeviceModal" tabindex="-1" aria-labelledby="editDeviceModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editDeviceModalLabel">
+                        <i class="fas fa-edit me-2"></i>Edit Device
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editDeviceForm">
+                        <input type="hidden" id="editDeviceId" name="device_id">
+                        <div class="mb-3">
+                            <label for="editDeviceIdDisplay" class="form-label">Device ID</label>
+                            <input type="text" class="form-control" id="editDeviceIdDisplay" disabled>
+                            <div class="form-text">Device ID tidak dapat diubah</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDeviceName" class="form-label">Device Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editDeviceName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDeviceLocation" class="form-label">Location</label>
+                            <input type="text" class="form-control" id="editDeviceLocation">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDeviceDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="editDeviceDescription" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary" onclick="window.iotDashboard.updateDevice()">
+                        <i class="fas fa-save me-1"></i>Simpan Perubahan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Messages Container -->
+    <div id="alertMessages" class="position-fixed top-0 end-0 p-3" style="z-index: 9999;"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

@@ -2,8 +2,8 @@
 -- Run this script in PHPMyAdmin to create the database and tables
 
 -- Create database
-CREATE DATABASE IF NOT EXISTS iot_kelapa_sawit CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE iot_kelapa_sawit;
+CREATE DATABASE IF NOT EXISTS fare1399_sawit_iot_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE fare1399_sawit_iot_db;
 
 -- Create devices table
 CREATE TABLE devices (

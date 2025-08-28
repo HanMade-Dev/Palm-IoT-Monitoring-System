@@ -12,23 +12,23 @@ if ($db_url) {
     define('DB_TYPE', 'pgsql');
 } else {
     // For MySQL hosting (RumahWeb, shared hosting)
-    // Uncomment and configure for MySQL hosting:
-    /*
+    // Configure for MySQL hosting - UPDATE THESE VALUES:
     define('DB_HOST', 'localhost');
-    define('DB_USERNAME', 'your_db_username');
-    define('DB_PASSWORD', 'your_db_password');
-    define('DB_NAME', 'your_db_name');
+    define('DB_USERNAME', 'your_db_username');  // Change this
+    define('DB_PASSWORD', 'your_db_password');  // Change this
+    define('DB_NAME', 'fare1399_sawit_iot_db');      // Change this if different
     define('DB_PORT', 3306);
     define('DB_TYPE', 'mysql');
-    */
     
-    // For PostgreSQL hosting (current setup)
-    define('DB_HOST', getenv('PGHOST') ?: 'localhost');
-    define('DB_USERNAME', getenv('PGUSER') ?: 'postgres');
-    define('DB_PASSWORD', getenv('PGPASSWORD') ?: '');
-    define('DB_NAME', getenv('PGDATABASE') ?: 'iot_kelapa_sawit');
-    define('DB_PORT', getenv('PGPORT') ?: 5432);
-    define('DB_TYPE', 'pgsql');
+    // Alternative: Auto-detect from environment (if your host supports it)
+    /*
+    define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+    define('DB_USERNAME', getenv('DB_USERNAME') ?: 'root');
+    define('DB_PASSWORD', getenv('DB_PASSWORD') ?: '');
+    define('DB_NAME', getenv('DB_NAME') ?: 'iot_kelapa_sawit');
+    define('DB_PORT', getenv('DB_PORT') ?: 3306);
+    define('DB_TYPE', 'mysql');
+    */
 }
 
 // Timezone

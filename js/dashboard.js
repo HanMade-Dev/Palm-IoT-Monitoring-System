@@ -1,4 +1,3 @@
-
 // Dashboard JavaScript for IoT Monitoring System
 
 class IoTDashboard {
@@ -137,10 +136,10 @@ class IoTDashboard {
 
     createDeviceCards() {
         const container = document.getElementById('devices-container');
-        
+
         // Get all devices from API and serial connections
         let allDevices = [...this.devices];
-        
+
         // Add serial devices that have device info
         this.connectedSerialPorts.forEach(portInfo => {
             if (portInfo.deviceInfo) {
@@ -180,14 +179,14 @@ class IoTDashboard {
         });
 
         container.innerHTML = cardsHtml;
-        
+
         // Initialize mini charts for all devices with longer delay to ensure DOM is ready
         setTimeout(() => {
             allDevices.forEach(device => {
                 const deviceId = device.device_id;
                 const canvasElement = document.getElementById(`mini-chart-${deviceId}`);
                 console.log(`Looking for canvas mini-chart-${deviceId}:`, canvasElement);
-                
+
                 if (canvasElement) {
                     this.createMiniChart(deviceId);
                 }
@@ -198,7 +197,7 @@ class IoTDashboard {
     createDeviceCardHtml(device, connectionType) {
         const deviceId = device.device_id;
         const data = this.deviceData[deviceId] || {};
-        
+
         return `
             <div class="col-lg-4 col-md-6">
                 <div class="device-card" onclick="window.iotDashboard.showDeviceDetail('${deviceId}')">
@@ -211,12 +210,12 @@ class IoTDashboard {
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted">ID: ${deviceId}</small>
-                            <span class="badge ${connectionType === 'serial' ? 'bg-info' : 'bg-success'}" id="status-${deviceId}">
-                                ${connectionType === 'serial' ? 'Serial' : 'Online'}
+                            <span class="badge ${this.getDeviceStatusBadgeClass(device, connectionType)}" id="status-${deviceId}">
+                                ${this.getDeviceStatusText(device, connectionType)}
                             </span>
                         </div>
                     </div>
-                    
+
                     <div class="device-card-sensors">
                         <div class="mini-sensor">
                             <div class="mini-sensor-icon bg-primary">
@@ -247,11 +246,11 @@ class IoTDashboard {
                             <div class="mini-sensor-label">Hujan</div>
                         </div>
                     </div>
-                    
+
                     <div class="mini-chart-container">
                         <canvas id="mini-chart-${deviceId}" width="400" height="120"></canvas>
                     </div>
-                    
+
                     <div class="device-card-footer">
                         <small class="text-muted">
                             Last update: <span id="last-update-${deviceId}">-</span>
@@ -313,10 +312,10 @@ class IoTDashboard {
 
         // Update device card
         this.updateDeviceCard(deviceId, data);
-        
+
         // Update mini chart
         this.updateMiniChart(deviceId, data);
-        
+
         // Update modal if it's showing this device
         if (this.currentModalDeviceId === deviceId) {
             this.updateModalSensorData(data);
@@ -324,14 +323,14 @@ class IoTDashboard {
             document.getElementById('modal-last-seen').textContent = 
                 `Last seen: ${new Date().toLocaleString('id-ID')}`;
         }
-        
+
         // Update last update time
         const lastUpdateElement = document.getElementById(`last-update-${deviceId}`);
         if (lastUpdateElement) {
             const now = new Date();
             lastUpdateElement.textContent = now.toLocaleTimeString('id-ID');
         }
-        
+
         // Update global last update
         this.updateLastUpdateTime();
     }
@@ -408,12 +407,12 @@ class IoTDashboard {
         }
 
         const ctx = canvas.getContext('2d');
-        
+
         // Generate some initial data points for demonstration
         const initialLabels = [];
         const initialMoistureData = [];
         const initialTempData = [];
-        
+
         for (let i = 5; i >= 0; i--) {
             const time = new Date();
             time.setMinutes(time.getMinutes() - i);
@@ -421,7 +420,7 @@ class IoTDashboard {
                 hour: '2-digit', 
                 minute: '2-digit'
             }));
-            
+
             // Use current device data or generate sample data
             const currentData = this.deviceData[deviceId];
             if (currentData && i === 0) {
@@ -435,7 +434,7 @@ class IoTDashboard {
                 initialTempData.push(baseTemp + (Math.random() - 0.5) * 5);
             }
         }
-        
+
         this.deviceCharts[deviceId] = new Chart(ctx, {
             type: 'line',
             data: {
@@ -516,22 +515,22 @@ class IoTDashboard {
     showDeviceDetail(deviceId) {
         const device = this.devices.find(d => d.device_id === deviceId) || 
                      this.connectedSerialPorts.find(p => p.deviceInfo?.device_id === deviceId)?.deviceInfo;
-        
+
         if (!device) return;
 
         const data = this.deviceData[deviceId] || {};
-        
+
         // Store current modal device for real-time updates
         this.currentModalDeviceId = deviceId;
-        
+
         // Update modal content
         document.getElementById('deviceDetailModalLabel').innerHTML = 
             `<i class="fas fa-microchip me-2"></i>${device.device_name || 'Device Detail'}`;
-        
+
         document.getElementById('modal-device-id').textContent = deviceId;
         document.getElementById('modal-device-name').textContent = device.device_name || 'Unknown';
         document.getElementById('modal-device-location').textContent = device.location || 'Unknown';
-        
+
         // Update connection status in modal
         const isSerial = this.connectedSerialPorts.some(p => p.deviceInfo?.device_id === deviceId);
         const connectionBadge = document.getElementById('modal-connection-badge');
@@ -542,20 +541,20 @@ class IoTDashboard {
             connectionBadge.className = 'badge bg-success';
             connectionBadge.textContent = 'WiFi Connection';
         }
-        
+
         document.getElementById('modal-last-seen').textContent = 
             `Last seen: ${new Date().toLocaleString('id-ID')}`;
 
         // Update sensor data in modal
         this.updateModalSensorData(data);
-        
+
         // Update modal chart
         this.updateModalChart(deviceId);
-        
+
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('deviceDetailModal'));
         modal.show();
-        
+
         // Clear modal device when modal is hidden
         const modalElement = document.getElementById('deviceDetailModal');
         modalElement.addEventListener('hidden.bs.modal', () => {
@@ -609,12 +608,12 @@ class IoTDashboard {
 
         const modalChart = this.charts.modal;
         const currentData = this.deviceData[deviceId];
-        
+
         // Copy data from device chart to modal chart
         modalChart.data.labels = [...deviceChart.data.labels];
         modalChart.data.datasets[0].data = [...deviceChart.data.datasets[0].data]; // Moisture
         modalChart.data.datasets[1].data = [...deviceChart.data.datasets[1].data]; // Temperature
-        
+
         // Use real data for distance and rain
         modalChart.data.datasets[2].data = modalChart.data.labels.map((_, index) => {
             // Use actual distance data if available, otherwise use current value
@@ -623,7 +622,7 @@ class IoTDashboard {
             }
             return deviceChart.data.datasets[2] ? deviceChart.data.datasets[2].data[index] || 0 : 0;
         });
-        
+
         modalChart.data.datasets[3].data = modalChart.data.labels.map((_, index) => {
             // Use actual rain data if available, otherwise use current value
             if (index === modalChart.data.labels.length - 1 && currentData) {
@@ -631,22 +630,79 @@ class IoTDashboard {
             }
             return deviceChart.data.datasets[3] ? deviceChart.data.datasets[3].data[index] || 0 : 0;
         });
-        
+
         modalChart.update('none');
+
+        // Update analytics summary
+        this.updateAnalyticsSummary(deviceId);
+    }
+
+    updateAnalyticsSummary(deviceId) {
+        const deviceChart = this.deviceCharts[deviceId];
+        if (!deviceChart) return;
+
+        const moistureData = deviceChart.data.datasets[0].data.filter(val => val !== null && val !== undefined);
+        const temperatureData = deviceChart.data.datasets[1].data.filter(val => val !== null && val !== undefined);
+
+        // Calculate analytics for moisture
+        if (moistureData.length > 0) {
+            const moistureMin = Math.min(...moistureData);
+            const moistureMax = Math.max(...moistureData);
+            const moistureAvg = moistureData.reduce((a, b) => a + b, 0) / moistureData.length;
+
+            document.getElementById('moisture-min').textContent = `${moistureMin.toFixed(1)}%`;
+            document.getElementById('moisture-max').textContent = `${moistureMax.toFixed(1)}%`;
+            document.getElementById('moisture-avg').textContent = `${moistureAvg.toFixed(1)}%`;
+        } else {
+            document.getElementById('moisture-min').textContent = '--';
+            document.getElementById('moisture-max').textContent = '--';
+            document.getElementById('moisture-avg').textContent = '--';
+        }
+
+        // Calculate analytics for temperature
+        if (temperatureData.length > 0) {
+            const tempMin = Math.min(...temperatureData);
+            const tempMax = Math.max(...temperatureData);
+            const tempAvg = temperatureData.reduce((a, b) => a + b, 0) / temperatureData.length;
+
+            document.getElementById('temperature-min').textContent = `${tempMin.toFixed(1)}°C`;
+            document.getElementById('temperature-max').textContent = `${tempMax.toFixed(1)}°C`;
+            document.getElementById('temperature-avg').textContent = `${tempAvg.toFixed(1)}°C`;
+        } else {
+            document.getElementById('temperature-min').textContent = '--';
+            document.getElementById('temperature-max').textContent = '--';
+            document.getElementById('temperature-avg').textContent = '--';
+        }
+
+        // Update summary info
+        const currentData = this.deviceData[deviceId];
+        const totalReadings = moistureData.length;
+
+        document.getElementById('total-readings').textContent = totalReadings;
+        document.getElementById('data-points').textContent = `${deviceChart.data.labels.length} data points`;
+
+        // Calculate time span
+        if (deviceChart.data.labels.length > 1) {
+            const firstTime = deviceChart.data.labels[0];
+            const lastTime = deviceChart.data.labels[deviceChart.data.labels.length - 1];
+            document.getElementById('time-span').textContent = `${firstTime} - ${lastTime}`;
+        } else {
+            document.getElementById('time-span').textContent = 'Single reading';
+        }
     }
 
     checkAllDeviceAlerts() {
         const alerts = [];
-        
+
         Object.keys(this.deviceData).forEach(deviceId => {
             const data = this.deviceData[deviceId];
             const device = this.devices.find(d => d.device_id === deviceId) || 
                          this.connectedSerialPorts.find(p => p.deviceInfo?.device_id === deviceId)?.deviceInfo;
             const deviceName = device?.device_name || deviceId;
-            
+
             alerts.push(...this.getDeviceAlerts(data, deviceName));
         });
-        
+
         this.displayAlerts(alerts);
     }
 
@@ -744,45 +800,265 @@ class IoTDashboard {
         this.fetchLatestData();
         this.updateTimer = setInterval(() => {
             this.fetchLatestData();
+            this.updateDeviceStatuses();
         }, this.updateInterval);
     }
 
-    setupEventListeners() {
-        // Handle page visibility change to pause/resume updates
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                clearInterval(this.updateTimer);
-            } else {
-                this.startRealTimeUpdates();
-            }
-        });
+    async updateDeviceStatuses() {
+        try {
+            await fetch(`${this.apiBaseUrl}update_device_status.php`, {
+                method: 'POST'
+            });
+        } catch (error) {
+            console.warn('Failed to update device statuses:', error);
+        }
+    }
 
-        // Handle window beforeunload
-        window.addEventListener('beforeunload', () => {
-            if (this.updateTimer) {
-                clearInterval(this.updateTimer);
+    // --- Device Management Functions ---
+
+    showManageDeviceModal() {
+        this.resetManageDeviceModal();
+        this.loadDeviceManagementList();
+        const modal = new bootstrap.Modal(document.getElementById('manageDeviceModal'));
+        modal.show();
+    }
+
+    resetManageDeviceModal() {
+        // Reset add device form
+        document.getElementById('addDeviceForm').reset();
+        document.getElementById('addDeviceSuccess').classList.add('d-none');
+
+        // Show device list tab by default
+        document.getElementById('device-list-tab').click();
+    }
+
+    async loadDeviceManagementList() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}get_devices.php`);
+            const result = await response.json();
+
+            const tbody = document.getElementById('deviceManagementList');
+
+            if (result.success && result.data.length > 0) {
+                tbody.innerHTML = result.data.map(device => `
+                    <tr>
+                        <td><code>${device.device_id}</code></td>
+                        <td>${device.device_name || '-'}</td>
+                        <td>${device.location || '-'}</td>
+                        <td>
+                            <span class="badge ${device.is_online ? 'bg-success' : 'bg-secondary'}">
+                                ${device.is_online ? 'Online' : 'Offline'}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="window.iotDashboard.editDevice('${device.device_id}')" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="window.iotDashboard.confirmDeleteDevice('${device.device_id}', '${device.device_name}')" title="Hapus">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Belum ada device terdaftar</td></tr>';
             }
+        } catch (error) {
+            console.error('Error loading device list:', error);
+            document.getElementById('deviceManagementList').innerHTML = 
+                '<tr><td colspan="5" class="text-center text-danger">Error loading devices</td></tr>';
+        }
+    }
+
+    async editDevice(deviceId) {
+        try {
+            // Get device details
+            const response = await fetch(`${this.apiBaseUrl}get_devices.php?device_id=${deviceId}`);
+            const result = await response.json();
+
+            if (result.success && result.data.length > 0) {
+                const device = result.data[0];
+
+                // Populate edit form
+                document.getElementById('editDeviceId').value = device.device_id;
+                document.getElementById('editDeviceIdDisplay').value = device.device_id;
+                document.getElementById('editDeviceName').value = device.device_name || '';
+                document.getElementById('editDeviceLocation').value = device.location || '';
+                document.getElementById('editDeviceDescription').value = device.description || '';
+
+                // Show edit modal
+                const modal = new bootstrap.Modal(document.getElementById('editDeviceModal'));
+                modal.show();
+            }
+        } catch (error) {
+            console.error('Error loading device for edit:', error);
+            this.showAlert('Error loading device data', 'danger');
+        }
+    }
+
+    async updateDevice() {
+        const form = document.getElementById('editDeviceForm');
+        const formData = new FormData(form);
+
+        const deviceData = {
+            device_id: formData.get('device_id'),
+            device_name: document.getElementById('editDeviceName').value,
+            location: document.getElementById('editDeviceLocation').value,
+            description: document.getElementById('editDeviceDescription').value
+        };
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}update_device.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(deviceData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showAlert('Device berhasil diperbarui!', 'success');
+
+                // Close modal and refresh list
+                bootstrap.Modal.getInstance(document.getElementById('editDeviceModal')).hide();
+                this.loadDeviceManagementList();
+                this.loadDevices(); // Refresh main dashboard
+            } else {
+                this.showAlert('Error: ' + (result.message || 'Failed to update device'), 'danger');
+            }
+        } catch (error) {
+            console.error('Error updating device:', error);
+            this.showAlert('Error updating device', 'danger');
+        }
+    }
+
+    confirmDeleteDevice(deviceId, deviceName) {
+        if (confirm(`Apakah Anda yakin ingin menghapus device "${deviceName}" (${deviceId})?\n\nSemua data sensor untuk device ini akan ikut terhapus!`)) {
+            this.deleteDevice(deviceId);
+        }
+    }
+
+    async deleteDevice(deviceId) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}delete_device.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ device_id: deviceId })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showAlert('Device berhasil dihapus!', 'success');
+                this.loadDeviceManagementList();
+                this.loadDevices(); // Refresh main dashboard
+            } else {
+                this.showAlert('Error: ' + (result.message || 'Failed to delete device'), 'danger');
+            }
+        } catch (error) {
+            console.error('Error deleting device:', error);
+            this.showAlert('Error deleting device', 'danger');
+        }
+    }
+
+    async addDevice() {
+        const form = document.getElementById('addDeviceForm');
+        const formData = new FormData(form);
+
+        const deviceData = {
+            device_id: document.getElementById('deviceId').value,
+            device_name: document.getElementById('deviceName').value,
+            location: document.getElementById('deviceLocation').value,
+            description: document.getElementById('deviceDescription').value
+        };
+
+        // Validate required fields
+        if (!deviceData.device_id || !deviceData.device_name) {
+            this.showAlert('Device ID dan Device Name harus diisi!', 'danger');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}add_device.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(deviceData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Show success state
+                document.getElementById('addDeviceForm').classList.add('d-none');
+                document.getElementById('addDeviceSuccess').classList.remove('d-none');
+                
+                // Display device info and ESP code
+                document.getElementById('successDeviceId').textContent = deviceData.device_id;
+                document.getElementById('generatedEspCode').textContent = result.data.esp_code;
+
+                this.showAlert('Device berhasil ditambahkan!', 'success');
+                this.loadDeviceManagementList();
+                this.loadDevices(); // Refresh main dashboard
+            } else {
+                this.showAlert('Error: ' + (result.message || 'Failed to add device'), 'danger');
+            }
+        } catch (error) {
+            console.error('Error adding device:', error);
+            this.showAlert('Error adding device', 'danger');
+        }
+    }
+
+    copyEspCode() {
+        const codeElement = document.getElementById('generatedEspCode');
+        const code = codeElement.textContent;
+        
+        navigator.clipboard.writeText(code).then(() => {
+            this.showAlert('Kode ESP32 berhasil disalin!', 'success');
+        }).catch(err => {
+            console.error('Failed to copy code: ', err);
+            this.showAlert('Gagal menyalin kode', 'danger');
         });
     }
 
-    showNoDataMessage() {
-        const container = document.getElementById('alerts-container');
-        const noDataAlert = `
-            <div class="alert alert-info border-0 shadow-sm" role="alert">
-                <div class="d-flex align-items-center">
-                    <div class="text-center w-100">
-                        <i class="fas fa-info-circle fs-2 mb-3 text-primary"></i>
-                        <h5 class="mb-2">Menunggu Data Sensor</h5>
-                        <p class="mb-0">Belum ada data terbaru dari device. Pastikan ESP32 terhubung dengan baik.</p>
-                    </div>
-                </div>
-            </div>
-        `;
-        container.innerHTML = noDataAlert;
+    // --- Utility Functions ---
+    showAlert(message, type = 'info') {
+        // Create alert container if not exists
+        let alertPlaceholder = document.getElementById('alertMessages');
+        if (!alertPlaceholder) {
+            alertPlaceholder = document.createElement('div');
+            alertPlaceholder.id = 'alertMessages';
+            alertPlaceholder.className = 'position-fixed top-0 end-0 p-3';
+            alertPlaceholder.style.zIndex = '9999';
+            document.body.appendChild(alertPlaceholder);
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = [
+            `<div class="alert alert-${type} alert-dismissible fade show" role="alert">`,
+            `   ${message}`,
+            '   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>',
+            '</div>'
+        ].join('');
+        alertPlaceholder.append(wrapper);
+
+        // Auto dismiss after 5 seconds
+        setTimeout(() => {
+            const alert = wrapper.querySelector('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 5000);
     }
 
     // Serial Communication Methods
-    
 
     async addSerialPort() {
         if (!('serial' in navigator)) {
@@ -986,7 +1262,7 @@ class IoTDashboard {
                 this.currentSerialDevice = portInfo.deviceInfo;
                 this.updateDeviceData(sensorData);
                 this.updateConnectionStatus(true);
-                
+
                 // Recreate cards if device info changed
                 this.createDeviceCards();
 
@@ -1061,6 +1337,45 @@ class IoTDashboard {
         this.updateDeviceData(sensorData);
         this.updateConnectionStatus(true);
         this.updateSerialPortUI();
+    }
+
+    getDeviceStatusBadgeClass(device, connectionType) {
+        if (connectionType === 'serial') {
+            return 'bg-info';
+        }
+
+        // Check last data received time
+        const lastData = this.deviceData[device.device_id];
+        if (!lastData) {
+            return 'bg-secondary';
+        }
+
+        const now = new Date();
+        const lastUpdate = new Date(device.last_reading || device.last_seen);
+        const timeDiff = (now - lastUpdate) / 1000 / 60; // minutes
+
+        if (timeDiff <= 5) return 'bg-success';  // Online
+        if (timeDiff <= 30) return 'bg-warning'; // Warning
+        return 'bg-danger'; // Offline
+    }
+
+    getDeviceStatusText(device, connectionType) {
+        if (connectionType === 'serial') {
+            return 'Serial';
+        }
+
+        const lastData = this.deviceData[device.device_id];
+        if (!lastData) {
+            return 'No Data';
+        }
+
+        const now = new Date();
+        const lastUpdate = new Date(device.last_reading || device.last_seen);
+        const timeDiff = (now - lastUpdate) / 1000 / 60; // minutes
+
+        if (timeDiff <= 5) return 'Online';
+        if (timeDiff <= 30) return 'Warning';
+        return 'Offline';
     }
 }
 
