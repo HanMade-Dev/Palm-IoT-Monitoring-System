@@ -1,4 +1,3 @@
-
 /***** LIBRARIES *****/
 #include <WiFi.h>
 #include <OneWire.h>
@@ -21,7 +20,7 @@ const uint32_t webUpdateInterval = 10000;  // 10 detik
 const String DEVICE_ID = "DEVICE_TEST";
 const String DEVICE_NAME = "Sensor Test";
 const String LOCATION = "Area Test";
-const String API_KEY = "1f11fa20102377bc01ea17d87311604be3cdf56083139026472af0db6f6db6a0";
+const String API_KEY = "test_api_key_for_device_test";
 const String API_URL = "http://iotmonitoringbycodev.my.id/api/receive_data.php";
 
 /***** PIN DEFINITIONS *****/

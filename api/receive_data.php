@@ -52,11 +52,18 @@ try {
 
     // Validate API key for device
     require_once '../config/api_keys.php';
+    
+    // Debug logging
+    logMessage("Validating API key: $api_key for device: " . $data['device_id']);
+    
     if (!verifyApiKey($api_key, $data['device_id'])) {
+        logMessage("API key validation failed for device: " . $data['device_id']);
         http_response_code(403);
         sendResponse(false, null, 'Invalid API key for device');
         exit;
     }
+    
+    logMessage("API key validation successful for device: " . $data['device_id']);
 
     // Sanitize and validate data
     $deviceId = sanitizeInput($data['device_id']);
