@@ -13,18 +13,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 try {
     ensureBufferDir();
     
-    $liveData = [];
+    // Auto flush buffer if needed
+    autoFlushBuffer();
     
-    // Read from buffer file first (real-time data)
+    $liveData = [];
+    $deviceLatest = [];
+    
+    // Step 1: Get latest data from database
+    try {
+        $pdo = getDBConnection();
+        
+        $sql = "SELECT 
+            sd.device_id,
+            d.device_name,
+            d.location,
+            sd.distance,
+            sd.distance_status,
+            sd.soil_moisture,
+            sd.moisture_status,
+            sd.temperature,
+            sd.temperature_status,
+            sd.rain_percentage,
+            sd.rain_status,
+            sd.timestamp,
+            ds.is_online,
+            ds.wifi_signal,
+            ds.free_heap,
+            ds.firmware_version
+        FROM sensor_data sd
+        JOIN devices d ON sd.device_id = d.device_id
+        LEFT JOIN device_status ds ON sd.device_id = ds.device_id
+        WHERE sd.id IN (
+            SELECT MAX(id) FROM sensor_data GROUP BY device_id
+        )
+        AND d.is_active = TRUE
+        ORDER BY sd.timestamp DESC";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute();
+        $dbData = $stmt->fetchAll();
+        
+        // Store database data indexed by device_id
+        foreach ($dbData as $data) {
+            $deviceLatest[$data['device_id']] = [
+                'device_id' => $data['device_id'],
+                'device_name' => $data['device_name'] ?? 'Unknown Device',
+                'location' => $data['location'] ?? 'Unknown Location',
+                'distance' => $data['distance'],
+                'distance_status' => $data['distance_status'] ?? getDistanceStatus($data['distance']),
+                'soil_moisture' => $data['soil_moisture'],
+                'moisture_status' => $data['moisture_status'] ?? 'Unknown',
+                'temperature' => $data['temperature'],
+                'temperature_status' => $data['temperature_status'] ?? getTemperatureStatus($data['temperature']),
+                'rain_percentage' => $data['rain_percentage'],
+                'rain_status' => $data['rain_status'] ?? 'Unknown',
+                'timestamp' => $data['timestamp'],
+                'wifi_signal' => $data['wifi_signal'],
+                'free_heap' => $data['free_heap'],
+                'firmware_version' => $data['firmware_version'] ?? '1.0.0',
+                'source' => 'database'
+            ];
+        }
+    } catch (Exception $e) {
+        logMessage("Database error in live.php: " . $e->getMessage());
+    }
+    
+    // Step 2: Read from buffer file (real-time data) and override database data if newer
     if (file_exists(BUFFER_FILE)) {
         $bufferData = file(BUFFER_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $deviceLatest = [];
         
         // Process buffer data (newest first)
         foreach (array_reverse($bufferData) as $line) {
             $data = json_decode($line, true);
-            if ($data && isset($data['device_id']) && !isset($deviceLatest[$data['device_id']])) {
-                $deviceLatest[$data['device_id']] = [
+            if (!$data || !isset($data['device_id'])) {
+                continue;
+            }
+            
+            $deviceId = $data['device_id'];
+            
+            // Check if this buffer data is newer than database data
+            $isNewer = true;
+            if (isset($deviceLatest[$deviceId])) {
+                $dbTimestamp = strtotime($deviceLatest[$deviceId]['timestamp']);
+                $bufferTimestamp = strtotime($data['timestamp']);
+                $isNewer = $bufferTimestamp > $dbTimestamp;
+            }
+            
+            // Only use buffer data if it's newer or if no database data exists
+            if ($isNewer) {
+                $deviceLatest[$deviceId] = [
                     'device_id' => $data['device_id'],
                     'device_name' => $data['device_name'] ?? 'Unknown Device',
                     'location' => $data['device_location'] ?? 'Unknown Location',
@@ -39,86 +116,19 @@ try {
                     'timestamp' => $data['timestamp'],
                     'wifi_signal' => $data['wifi_signal'] ?? null,
                     'free_heap' => $data['free_heap'] ?? null,
-                    'firmware_version' => $data['firmware_version'] ?? '1.0.0'
+                    'firmware_version' => $data['firmware_version'] ?? '1.0.0',
+                    'source' => 'buffer'
                 ];
             }
         }
-        
-        $liveData = array_values($deviceLatest);
     }
     
-    // If no buffer data, fall back to database
-    if (empty($liveData)) {
-        $pdo = getDBConnection();
-        
-        if (DB_TYPE === 'pgsql') {
-            $sql = "SELECT 
-                sd.device_id,
-                d.device_name,
-                d.location,
-                sd.distance,
-                sd.distance_status,
-                sd.soil_moisture,
-                sd.moisture_status,
-                sd.temperature,
-                sd.temperature_status,
-                sd.rain_percentage,
-                sd.rain_status,
-                sd.timestamp,
-                ds.is_online,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version
-            FROM sensor_data sd
-            JOIN devices d ON sd.device_id = d.device_id
-            LEFT JOIN device_status ds ON sd.device_id = ds.device_id
-            WHERE sd.id IN (
-                SELECT MAX(id) FROM sensor_data GROUP BY device_id
-            )
-            AND d.is_active = TRUE
-            ORDER BY sd.timestamp DESC";
-        } else {
-            $sql = "SELECT 
-                sd.device_id,
-                d.device_name,
-                d.location,
-                sd.distance,
-                sd.distance_status,
-                sd.soil_moisture,
-                sd.moisture_status,
-                sd.temperature,
-                sd.temperature_status,
-                sd.rain_percentage,
-                sd.rain_status,
-                sd.timestamp,
-                ds.is_online,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version
-            FROM sensor_data sd
-            JOIN devices d ON sd.device_id = d.device_id
-            LEFT JOIN device_status ds ON sd.device_id = ds.device_id
-            WHERE sd.id IN (
-                SELECT MAX(id) FROM sensor_data GROUP BY device_id
-            )
-            AND d.is_active = TRUE
-            ORDER BY sd.timestamp DESC";
-        }
-        
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute();
-        $liveData = $stmt->fetchAll();
-        
-        // Add computed status for database data
-        foreach ($liveData as &$data) {
-            if (!$data['distance_status']) {
-                $data['distance_status'] = getDistanceStatus($data['distance']);
-            }
-            if (!$data['temperature_status']) {
-                $data['temperature_status'] = getTemperatureStatus($data['temperature']);
-            }
-        }
-    }
+    $liveData = array_values($deviceLatest);
+    
+    // Sort by timestamp (newest first)
+    usort($liveData, function($a, $b) {
+        return strtotime($b['timestamp']) - strtotime($a['timestamp']);
+    });
     
     sendResponse(true, $liveData, 'Live data retrieved successfully');
     

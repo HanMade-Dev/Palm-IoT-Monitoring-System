@@ -255,7 +255,7 @@ class IoTDashboard {
         }
 
         try {
-            const response = await fetch(`${this.apiBaseUrl}get_latest.php`);
+            const response = await fetch(`${this.apiBaseUrl}live.php`);
             const data = await response.json();
 
             if (data.success) {
