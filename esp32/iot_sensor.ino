@@ -1,286 +1,423 @@
 
+/***** LIBRARIES *****/
 #include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <Ticker.h>
 
-// WiFi credentials - GANTI DENGAN KREDENSIAL WIFI ANDA
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+/***** WIFI *****/
+char ssid[] = "Mulkan";  // Ganti dengan SSID WiFi Anda
+char pass[] = "14171225";  // Ganti dengan password WiFi Anda
 
-// Server configuration - GANTI DENGAN URL SERVER ANDA
-const char* serverURL = "http://your-server.com/api/receive_data.php";
-const char* apiKey = "YOUR_API_KEY"; // Didapat dari dashboard saat menambah device
+/***** WEB SERVER CONFIG *****/
+const char* serverURL = "http://YOUR_DOMAIN.com/api/receive_data.php";  // Ganti dengan URL server Anda
+const uint32_t webUpdateInterval = 10000;  // 10 detik
 
-// Device information - GANTI SESUAI DEVICE ANDA
-const String deviceId = "ESP32_SAWIT_01";
-const String deviceName = "Sensor Area Utara";
-const String deviceLocation = "Kebun Blok A";
+// Device Configuration
+const String DEVICE_ID = "DEVICE_TEST";
+const String DEVICE_NAME = "Sensor Test";
+const String LOCATION = "Area Test";
+const String API_KEY = "1f11fa20102377bc01ea17d87311604be3cdf56083139026472af0db6f6db6a0";
+const String API_URL = "http://iotmonitoringbycodev.my.id/api/receive_data.php";
 
-// Pin definitions
-#define SOIL_MOISTURE_PIN A0
-#define RAIN_SENSOR_PIN A1
-#define ULTRASONIC_TRIG_PIN 2
-#define ULTRASONIC_ECHO_PIN 3
-#define TEMP_SENSOR_PIN 4
+/***** PIN DEFINITIONS *****/
+#define TRIG_PIN 23
+#define ECHO_PIN 19
+#define MOISTURE_SENSOR_PIN 34
+#define ONE_WIRE_BUS 4
+#define RAINDROP_AO_PIN 35
+#define BUTTON_PIN 18
 
-// Temperature sensor setup
-OneWire oneWire(TEMP_SENSOR_PIN);
-DallasTemperature tempSensor(&oneWire);
+/***** LCD I2C *****/
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Timing
-unsigned long lastSensorRead = 0;
-const unsigned long SENSOR_INTERVAL = 10000; // 10 seconds
+/***** OBJECTS *****/
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+Ticker ticker;
 
-// Status LED
-#define STATUS_LED 2
+/***** KOMUNIKASI/STATUS *****/
+unsigned long lastWebUpdate = 0;
+bool webServerConnected = false;
 
-void setup() {
-  Serial.begin(115200);
-  
-  // Initialize pins
-  pinMode(ULTRASONIC_TRIG_PIN, OUTPUT);
-  pinMode(ULTRASONIC_ECHO_PIN, INPUT);
-  pinMode(STATUS_LED, OUTPUT);
-  
-  // Initialize temperature sensor
-  tempSensor.begin();
-  
-  // Connect to WiFi
-  Serial.println("=== IoT Kelapa Sawit Monitor ===");
-  Serial.println("Device ID: " + deviceId);
-  Serial.println("Device Name: " + deviceName);
-  Serial.println("Location: " + deviceLocation);
-  Serial.println();
-  
-  connectToWiFi();
-  
-  Serial.println("Setup completed successfully!");
-  Serial.println("Starting sensor readings...");
-  Serial.println();
+/***** VARIABEL GLOBAL SENSOR *****/
+long  duration;
+int   distance        = -1;
+String distanceStatus = "Unknown";
+
+int   moistureValue   = 0;
+int   soilPct         = 0;
+String moistureStatus = "Unknown";
+
+float temperature     = DEVICE_DISCONNECTED_C;
+String temperatureStatus = "Unknown";
+
+/***** RAIN SENSOR *****/
+int   rd_adc    = 0;
+int   rd_wetPct = 0;
+String rd_klas = "Unknown";
+bool  rd_isRaining = false;
+
+/***** LAYAR *****/
+int currentScreen = 0;
+const int TOTAL_SCREENS = 4;
+
+/***** TOMBOL (debounce) *****/
+int lastStableState = HIGH;
+int lastReading     = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
+
+/***** RainDrop Calibration *****/
+const int   RD_ADC_MAX      = 4095;
+int         rd_thresholdWet = 2100;
+int         rd_thresholdDry = 3850;
+
+/***** Error Counters *****/
+int tempReadErrors = 0;
+int distanceReadErrors = 0;
+const int MAX_READ_ERRORS = 5;
+
+/***** LCD AUTO SLEEP CONFIG *****/
+#define LCD_SLEEP_TIMEOUT_MS   30000UL
+#define LCD_WAKE_ON_FIRST_PRESS 1
+bool lcdAwake = true;
+unsigned long lastUserActionMs = 0;
+
+/***** UTILITIES *****/
+int readAnalogMedian(int pin, int samples=11) {
+  samples = constrain(samples, 3, 15);
+  int buf[15];
+  for (int i = 0; i < samples; i++) buf[i] = analogRead(pin);
+  for (int i = 1; i < samples; i++) {
+    int k = buf[i], j = i - 1;
+    while (j >= 0 && buf[j] > k) { buf[j+1] = buf[j]; j--; }
+    buf[j+1] = k;
+  }
+  return buf[samples/2];
 }
 
-void loop() {
-  // Check WiFi connection
+String classifyMoisture(int moisture) {
+  if (moisture > 3000)      return "Kering";
+  else if (moisture > 1500) return "Cukup";
+  else                      return "Basah";
+}
+
+String getDistanceStatus(int d) {
+  if (d < 0)         return "Error";
+  else if (d < 20)   return "Tinggi";
+  else if (d < 80)   return "Normal";
+  else               return "Rendah";
+}
+
+String getTemperatureStatus(float t) {
+  if (t == DEVICE_DISCONNECTED_C) return "Error";
+  else if (t < 20)       return "Dingin";
+  else if (t < 30)       return "Normal";
+  else                   return "Panas";
+}
+
+int rd_wetPercentFromADC(int adc, int dryHigh=4095, int wetLow=2000){
+  adc    = constrain(adc, 0, RD_ADC_MAX);
+  wetLow = constrain(wetLow, 0, dryHigh-1);
+  long num = (long)(dryHigh - adc) * 100L;
+  long den = (long)(dryHigh - wetLow);
+  int pct  = (int)(num / den);
+  return constrain(pct, 0, 100);
+}
+
+/***** LCD POWER HELPERS *****/
+void lcdSleep() {
+  if (!lcdAwake) return;
+  lcdAwake = false;
+  lcd.noBacklight();
+  Serial.println("[LCD] sleep");
+}
+
+void lcdWake(bool refreshNow) {
+  if (lcdAwake) { lastUserActionMs = millis(); return; }
+  lcdAwake = true;
+  lcd.backlight();
+  lastUserActionMs = millis();
+  Serial.println("[LCD] wake");
+  if (refreshNow) lcd.clear();
+}
+
+/***** KIRIM DATA KE WEB *****/
+void sendDataToWebServer() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected, reconnecting...");
-    connectToWiFi();
-  }
-  
-  // Read and send sensor data
-  if (millis() - lastSensorRead >= SENSOR_INTERVAL) {
-    readAndSendSensorData();
-    lastSensorRead = millis();
-  }
-  
-  // Blink status LED to show device is alive
-  blinkStatusLED();
-  
-  delay(100);
-}
-
-void connectToWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(1000);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("");
-    Serial.println("WiFi connected successfully!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("Signal strength: ");
-    Serial.println(WiFi.RSSI());
-    digitalWrite(STATUS_LED, HIGH);
-  } else {
-    Serial.println("");
-    Serial.println("Failed to connect to WiFi!");
-    digitalWrite(STATUS_LED, LOW);
-  }
-}
-
-void readAndSendSensorData() {
-  Serial.println("--- Reading Sensors ---");
-  
-  // Read all sensors
-  int soilMoisture = readSoilMoisture();
-  int rainPercentage = readRainSensor();
-  float temperature = readTemperature();
-  int distance = readUltrasonic();
-  
-  // Display readings
-  Serial.println("Sensor Readings:");
-  Serial.println("- Soil Moisture: " + String(soilMoisture) + "%");
-  Serial.println("- Rain: " + String(rainPercentage) + "%");
-  Serial.println("- Temperature: " + String(temperature) + "°C");
-  Serial.println("- Water Distance: " + String(distance) + " cm");
-  Serial.println("- WiFi Signal: " + String(WiFi.RSSI()) + " dBm");
-  Serial.println("- Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
-  
-  // Send data to server
-  sendDataToServer(soilMoisture, rainPercentage, temperature, distance);
-  
-  Serial.println("----------------------");
-  Serial.println();
-}
-
-void sendDataToServer(int soilMoisture, int rainPercentage, float temperature, int distance) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected, skipping data transmission");
+    webServerConnected = false;
+    Serial.println("WiFi not connected, skipping web update");
     return;
   }
-  
-  // Create JSON payload
-  DynamicJsonDocument doc(1024);
-  doc["device_id"] = deviceId;
-  doc["device_name"] = deviceName;
-  doc["device_location"] = deviceLocation;
-  doc["soil_moisture"] = soilMoisture;
-  doc["moisture_status"] = getMoistureStatus(soilMoisture);
-  doc["rain_percentage"] = rainPercentage;
-  doc["rain_status"] = getRainStatus(rainPercentage);
-  doc["temperature"] = temperature;
-  doc["temperature_status"] = getTemperatureStatus(temperature);
-  doc["distance"] = distance;
-  doc["distance_status"] = getDistanceStatus(distance);
-  doc["wifi_signal"] = WiFi.RSSI();
-  doc["free_heap"] = ESP.getFreeHeap();
-  doc["firmware_version"] = "2.0.0";
-  
-  String jsonString;
-  serializeJson(doc, jsonString);
-  
-  // Send HTTP POST request
+
+  Serial.println("Sending data to server...");
+
   HTTPClient http;
   http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", apiKey);
-  http.setTimeout(10000); // 10 second timeout
-  
-  Serial.println("Sending data to server...");
+  http.setTimeout(10000);  // 10 second timeout
+
+  StaticJsonDocument<512> doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["device_name"] = DEVICE_NAME;
+  doc["device_location"] = LOCATION;
+  doc["distance"] = distance;
+  doc["distance_status"] = distanceStatus;
+  doc["soil_moisture"] = soilPct;
+  doc["moisture_status"] = moistureStatus;
+
+  if (temperature == DEVICE_DISCONNECTED_C) {
+    doc["temperature"] = "DEVICE_DISCONNECTED_C";
+  } else {
+    doc["temperature"] = temperature;
+  }
+  doc["temperature_status"] = temperatureStatus;
+  doc["rain_percentage"] = rd_wetPct;
+  doc["rain_status"] = rd_klas;
+  doc["wifi_signal"] = WiFi.RSSI();
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["firmware_version"] = "2.0.0";
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  Serial.println("JSON Data: " + jsonString);
+
   int httpResponseCode = http.POST(jsonString);
-  
+
   if (httpResponseCode > 0) {
     String response = http.getString();
-    Serial.println("✓ Data sent successfully!");
-    Serial.println("HTTP Response: " + String(httpResponseCode));
-    
-    // Parse response to check if successful
-    DynamicJsonDocument responseDoc(512);
-    deserializeJson(responseDoc, response);
-    
-    if (responseDoc["success"]) {
-      Serial.println("✓ Server confirmed data received");
-      digitalWrite(STATUS_LED, HIGH);
+    Serial.println("HTTP Response Code: " + String(httpResponseCode));
+    Serial.println("Response: " + response);
+    webServerConnected = (httpResponseCode == 200);
+
+    if (httpResponseCode == 200) {
+      Serial.println("Data sent successfully!");
     } else {
-      Serial.println("⚠ Server error: " + String(responseDoc["message"].as<String>()));
+      Serial.println("Server error: " + String(httpResponseCode));
     }
   } else {
-    Serial.println("✗ HTTP Error: " + String(httpResponseCode));
-    Serial.println("Error: " + http.errorToString(httpResponseCode));
-    digitalWrite(STATUS_LED, LOW);
+    webServerConnected = false;
+    Serial.println("Connection failed. Error: " + String(httpResponseCode));
   }
-  
+
   http.end();
 }
 
-int readSoilMoisture() {
-  int raw = analogRead(SOIL_MOISTURE_PIN);
-  // Convert to percentage (adjust these values based on your sensor calibration)
-  // Dry soil = high resistance = high reading = low moisture
-  // Wet soil = low resistance = low reading = high moisture
-  int moisture = map(raw, 0, 4095, 100, 0); // ESP32 has 12-bit ADC (0-4095)
-  return constrain(moisture, 0, 100);
-}
-
-int readRainSensor() {
-  int raw = analogRead(RAIN_SENSOR_PIN);
-  // Convert to percentage (adjust based on your sensor)
-  int rain = map(raw, 0, 4095, 0, 100);
-  return constrain(rain, 0, 100);
-}
-
-float readTemperature() {
-  tempSensor.requestTemperatures();
-  float temp = tempSensor.getTempCByIndex(0);
-  
-  // Check if reading is valid
-  if (temp == DEVICE_DISCONNECTED_C) {
-    Serial.println("⚠ Temperature sensor error!");
-    return -999; // Error value
+/***** LCD UPDATE *****/
+void updateLCD() {
+  if(!lcdAwake) return;
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  switch (currentScreen) {
+    case 0:
+      lcd.print("Jarak Air:");
+      lcd.setCursor(0, 1);
+      if (distance < 0) lcd.print("Error!");
+      else { lcd.print(distance); lcd.print(" cm ("); lcd.print(distanceStatus); lcd.print(")"); }
+      break;
+    case 1:
+      lcd.print("Lembap Tanah:");
+      lcd.setCursor(0, 1);
+      lcd.print(soilPct); lcd.print("% ("); lcd.print(moistureStatus); lcd.print(")");
+      break;
+    case 2:
+      lcd.print("Suhu Udara:");
+      lcd.setCursor(0, 1);
+      if (temperature != DEVICE_DISCONNECTED_C) {
+        lcd.print(temperature, 1); lcd.print("C ("); lcd.print(temperatureStatus); lcd.print(")");
+      } else lcd.print("Error!");
+      break;
+    case 3:
+      lcd.print("Status Hujan:");
+      lcd.setCursor(0, 1);
+      lcd.print(rd_wetPct); lcd.print("% ("); lcd.print(rd_klas); lcd.print(")");
+      break;
   }
-  
-  return temp;
+  lcd.setCursor(15, 0);
+  if (WiFi.status() == WL_CONNECTED) {
+    if (webServerConnected) lcd.print("*"); else lcd.print("?");
+  } else lcd.print("X");
 }
 
-int readUltrasonic() {
-  // Send trigger pulse
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(ULTRASONIC_TRIG_PIN, HIGH);
+/***** SENSOR READING *****/
+void sampleSensors() {
+  Serial.println("Reading sensors...");
+
+  // Read ultrasonic sensor
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(5);
+  digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
-  
-  // Read echo pulse
-  long duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, 30000); // 30ms timeout
-  
+  digitalWrite(TRIG_PIN, LOW);
+  duration = pulseIn(ECHO_PIN, HIGH, 30000UL);
+
   if (duration == 0) {
-    Serial.println("⚠ Ultrasonic sensor timeout!");
-    return -1; // Error value
+    distanceReadErrors++;
+    if (distanceReadErrors >= MAX_READ_ERRORS) { 
+      distance = -1; 
+      distanceStatus = "Error"; 
+    }
+  } else {
+    distanceReadErrors = 0;
+    distance = (int)(duration * 0.0343f / 2.0f);
+    distanceStatus = getDistanceStatus(distance);
   }
-  
-  // Calculate distance in cm
-  int distance = duration * 0.034 / 2;
-  
-  // Validate distance (HC-SR04 range is 2-400cm)
-  if (distance < 2 || distance > 400) {
-    return -1; // Out of range
+
+  // Read soil moisture
+  moistureValue = readAnalogMedian(MOISTURE_SENSOR_PIN, 11);
+  soilPct = map(constrain(moistureValue, 1200, 3600), 3600, 1200, 0, 100);
+  soilPct = constrain(soilPct, 0, 100);
+  moistureStatus = classifyMoisture(moistureValue);
+
+  // Read rain sensor
+  rd_adc = readAnalogMedian(RAINDROP_AO_PIN, 11);
+  if (!rd_isRaining && rd_adc <= rd_thresholdWet) rd_isRaining = true;
+  if ( rd_isRaining && rd_adc >= rd_thresholdDry) rd_isRaining = false;
+  rd_wetPct = rd_wetPercentFromADC(rd_adc, 4095, 2000);
+
+  if (rd_adc >= rd_thresholdDry) rd_klas = "Kering";
+  else if (rd_adc <= rd_thresholdWet) rd_klas = "Hujan";
+  else rd_klas = "Cukup";
+
+  // Read temperature
+  sensors.requestTemperatures();
+  float t = sensors.getTempCByIndex(0);
+  if (t == DEVICE_DISCONNECTED_C) {
+    tempReadErrors++;
+    temperature = DEVICE_DISCONNECTED_C;
+    temperatureStatus = "Error";
+  } else {
+    temperature = t;
+    temperatureStatus = getTemperatureStatus(t);
+    tempReadErrors = 0;
   }
-  
-  return distance;
+
+  // Print sensor readings
+  Serial.println("=== Sensor Readings ===");
+  Serial.println("Distance: " + String(distance) + " cm (" + distanceStatus + ")");
+  Serial.println("Soil Moisture: " + String(soilPct) + "% (" + moistureStatus + ")");
+  Serial.println("Temperature: " + String(temperature) + "°C (" + temperatureStatus + ")");
+  Serial.println("Rain: " + String(rd_wetPct) + "% (" + rd_klas + ")");
+  Serial.println("WiFi Signal: " + String(WiFi.RSSI()) + " dBm");
+  Serial.println("Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
+
+  // Send to web server
+  if (millis() - lastWebUpdate >= webUpdateInterval) {
+    sendDataToWebServer();
+    lastWebUpdate = millis();
+  }
+
+  if (lcdAwake) updateLCD();
 }
 
-String getMoistureStatus(int moisture) {
-  if (moisture < 30) return "Kering";
-  if (moisture < 60) return "Sedang";
-  return "Basah";
+/***** SETUP *****/
+void setup() {
+  Serial.begin(115200);
+  Serial.println("=== IoT Kelapa Sawit Monitor ===");
+  Serial.println("Device ID: " + String(DEVICE_ID));
+  Serial.println("Device Name: " + String(DEVICE_NAME));
+  Serial.println("Location: " + String(LOCATION));
+
+  Wire.begin();
+  lcd.init(); 
+  lcd.backlight();
+  lcd.setCursor(0, 0); 
+  lcd.print(DEVICE_NAME);
+  lcd.setCursor(0, 1); 
+  lcd.print("Menyambung...");
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  sensors.begin(); 
+  sensors.setWaitForConversion(false);
+
+  analogReadResolution(12);
+  analogSetPinAttenuation(MOISTURE_SENSOR_PIN, ADC_11db);
+  analogSetPinAttenuation(RAINDROP_AO_PIN, ADC_11db);
+  pinMode(MOISTURE_SENSOR_PIN, INPUT);
+  pinMode(RAINDROP_AO_PIN, INPUT);
+
+  // Connect to WiFi
+  Serial.println("Connecting to WiFi: " + String(ssid));
+  WiFi.begin(ssid, pass);
+
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 30) {
+    delay(500); 
+    Serial.print(".");
+    wifiAttempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.println("WiFi connected successfully!");
+    Serial.println("IP address: " + WiFi.localIP().toString());
+    Serial.println("Signal strength: " + String(WiFi.RSSI()) + " dBm");
+    lcd.setCursor(0, 1); 
+    lcd.print("WiFi OK         ");
+  } else {
+    Serial.println();
+    Serial.println("WiFi connection failed!");
+    lcd.setCursor(0, 1); 
+    lcd.print("WiFi GAGAL      ");
+  }
+
+  // Start sensor reading
+  ticker.attach_ms(5000, sampleSensors);  // Read sensors every 5 seconds
+
+  delay(2000); 
+  lcd.clear();
+  lcdAwake = true;
+  lastUserActionMs = millis();
+
+  Serial.println("Setup completed. Starting monitoring...");
 }
 
-String getRainStatus(int rain) {
-  if (rain < 20) return "Cerah";
-  if (rain < 60) return "Gerimis";
-  return "Hujan";
-}
+/***** LOOP *****/
+void loop() {
+  int reading = digitalRead(BUTTON_PIN);
+  if (reading != lastReading) lastDebounceTime = millis();
 
-String getTemperatureStatus(float temp) {
-  if (temp == -999) return "Error";
-  if (temp < 20) return "Dingin";
-  if (temp < 30) return "Normal";
-  if (temp < 35) return "Hangat";
-  return "Panas";
-}
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != lastStableState) {
+      lastStableState = reading;
+      if (lastStableState == LOW) {
+        lastUserActionMs = millis();
+#if LCD_WAKE_ON_FIRST_PRESS
+        if (!lcdAwake) { 
+          lcdWake(true); 
+          updateLCD(); 
+        } else { 
+          currentScreen = (currentScreen + 1) % TOTAL_SCREENS; 
+          updateLCD(); 
+        }
+#else
+        if (!lcdAwake) lcdWake(false);
+        currentScreen = (currentScreen + 1) % TOTAL_SCREENS; 
+        updateLCD();
+#endif
+        Serial.print("BTN -> screen "); 
+        Serial.println(currentScreen);
+      }
+    }
+  }
+  lastReading = reading;
 
-String getDistanceStatus(int distance) {
-  if (distance == -1) return "Error";
-  if (distance < 20) return "Tinggi";
-  if (distance < 50) return "Sedang";
-  return "Rendah";
-}
+  if (lcdAwake && (millis() - lastUserActionMs >= LCD_SLEEP_TIMEOUT_MS)) {
+    lcdSleep();
+  }
 
-void blinkStatusLED() {
-  static unsigned long lastBlink = 0;
-  static bool ledState = false;
-  
-  if (millis() - lastBlink > 2000) { // Blink every 2 seconds
-    ledState = !ledState;
-    digitalWrite(STATUS_LED, ledState);
-    lastBlink = millis();
+  // Check WiFi connection periodically
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Attempting to reconnect...");
+    WiFi.reconnect();
   }
 }
