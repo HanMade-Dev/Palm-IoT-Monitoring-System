@@ -10,16 +10,19 @@
 #include <Ticker.h>
 
 /***** WIFI *****/
-const char* ssid = "Mulkan";  // Ganti dengan SSID WiFi Anda
-const char* password = "14171225";  // Ganti dengan password WiFi Anda
+char ssid[] = "Mulkan";  // Ganti dengan SSID WiFi Anda
+char pass[] = "14171225";  // Ganti dengan password WiFi Anda
 
 /***** WEB SERVER CONFIG *****/
+const char* serverURL = "http://iotmonitoringbycodev.my.id//api/receive_data.php";  // Ganti dengan URL server Anda
+const uint32_t webUpdateInterval = 10000;  // 10 detik
+
+// Device Configuration
 const String DEVICE_ID = "DEVICE_TEST";
 const String DEVICE_NAME = "Sensor Test";
 const String LOCATION = "Area Test";
 const String API_KEY = "1f11fa20102377bc01ea17d87311604be3cdf56083139026472af0db6f6db6a0";
 const String API_URL = "http://iotmonitoringbycodev.my.id/api/receive_data.php";
-const uint32_t webUpdateInterval = 10000;  // 10 detik
 
 /***** PIN DEFINITIONS *****/
 #define TRIG_PIN 23
@@ -40,8 +43,6 @@ Ticker ticker;
 /***** KOMUNIKASI/STATUS *****/
 unsigned long lastWebUpdate = 0;
 bool webServerConnected = false;
-int connectionRetries = 0;
-const int maxRetries = 3;
 
 /***** VARIABEL GLOBAL SENSOR *****/
 long  duration;
@@ -150,51 +151,42 @@ void lcdWake(bool refreshNow) {
 void sendDataToWebServer() {
   if (WiFi.status() != WL_CONNECTED) {
     webServerConnected = false;
-    Serial.println("WiFi not connected, attempting reconnection...");
-    reconnectWiFi();
+    Serial.println("WiFi not connected, skipping web update");
     return;
   }
 
-  Serial.println("=== " + DEVICE_ID + " Sensor Readings ===");
-  Serial.println("Device Name: " + DEVICE_NAME);
-  Serial.println("Location: " + LOCATION);
-  Serial.println("Distance: " + String(distance) + " cm (" + distanceStatus + ")");
-  Serial.println("Soil Moisture: " + String(soilPct) + "% (" + moistureStatus + ")");
-  Serial.println("Temperature: " + String(temperature) + "°C (" + temperatureStatus + ")");
-  Serial.println("Rain: " + String(rd_wetPct) + "% (" + rd_klas + ")");
-  Serial.println("WiFi Signal: " + String(WiFi.RSSI()) + " dBm");
-  Serial.println("Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
+  Serial.println("Sending data to server...");
 
   HTTPClient http;
-  http.begin(API_URL);
+  http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", API_KEY);
-  http.setTimeout(15000);  // 15 second timeout
+  http.setTimeout(10000);  // 10 second timeout
 
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["device_name"] = DEVICE_NAME;
   doc["device_location"] = LOCATION;
   doc["distance"] = distance;
+  doc["distance_status"] = distanceStatus;
   doc["soil_moisture"] = soilPct;
   doc["moisture_status"] = moistureStatus;
-  
+
   if (temperature == DEVICE_DISCONNECTED_C) {
-    doc["temperature"] = nullptr;
+    doc["temperature"] = "DEVICE_DISCONNECTED_C";
   } else {
     doc["temperature"] = temperature;
   }
-  
+  doc["temperature_status"] = temperatureStatus;
   doc["rain_percentage"] = rd_wetPct;
   doc["rain_status"] = rd_klas;
   doc["wifi_signal"] = WiFi.RSSI();
   doc["free_heap"] = ESP.getFreeHeap();
-  doc["firmware_version"] = "2.1.0";
+  doc["firmware_version"] = "2.0.0";
 
   String jsonString;
   serializeJson(doc, jsonString);
 
-  Serial.println("Sending JSON: " + jsonString);
+  Serial.println("JSON Data: " + jsonString);
 
   int httpResponseCode = http.POST(jsonString);
 
@@ -202,50 +194,19 @@ void sendDataToWebServer() {
     String response = http.getString();
     Serial.println("HTTP Response Code: " + String(httpResponseCode));
     Serial.println("Response: " + response);
-    
+    webServerConnected = (httpResponseCode == 200);
+
     if (httpResponseCode == 200) {
-      webServerConnected = true;
-      connectionRetries = 0;
-      Serial.println("✓ Data sent successfully!");
+      Serial.println("Data sent successfully!");
     } else {
-      webServerConnected = false;
-      Serial.println("✗ Server error: " + String(httpResponseCode));
+      Serial.println("Server error: " + String(httpResponseCode));
     }
   } else {
     webServerConnected = false;
-    connectionRetries++;
-    Serial.println("✗ Connection failed. Error: " + String(httpResponseCode));
-    Serial.println("Retry count: " + String(connectionRetries));
-    
-    if (connectionRetries >= maxRetries) {
-      Serial.println("Max retries reached. Will try to reconnect WiFi next time.");
-      connectionRetries = 0;
-    }
+    Serial.println("Connection failed. Error: " + String(httpResponseCode));
   }
 
   http.end();
-}
-
-/***** WiFi RECONNECTION *****/
-void reconnectWiFi() {
-  Serial.println("Attempting WiFi reconnection...");
-  WiFi.disconnect();
-  delay(1000);
-  WiFi.begin(ssid, password);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi reconnected successfully!");
-    Serial.println("IP address: " + WiFi.localIP().toString());
-  } else {
-    Serial.println("\nWiFi reconnection failed!");
-  }
 }
 
 /***** LCD UPDATE *****/
@@ -278,20 +239,15 @@ void updateLCD() {
       lcd.print(rd_wetPct); lcd.print("% ("); lcd.print(rd_klas); lcd.print(")");
       break;
   }
-  
-  // Status indicator
   lcd.setCursor(15, 0);
   if (WiFi.status() == WL_CONNECTED) {
-    if (webServerConnected) lcd.print("*"); 
-    else lcd.print("?");
-  } else {
-    lcd.print("X");
-  }
+    if (webServerConnected) lcd.print("*"); else lcd.print("?");
+  } else lcd.print("X");
 }
 
 /***** SENSOR READING *****/
 void sampleSensors() {
-  Serial.println("=== Reading Sensors ===");
+  Serial.println("Reading sensors...");
 
   // Read ultrasonic sensor
   digitalWrite(TRIG_PIN, LOW);
@@ -310,7 +266,6 @@ void sampleSensors() {
   } else {
     distanceReadErrors = 0;
     distance = (int)(duration * 0.0343f / 2.0f);
-    distance = constrain(distance, 0, 500); // Limit to reasonable range
     distanceStatus = getDistanceStatus(distance);
   }
 
@@ -332,19 +287,25 @@ void sampleSensors() {
 
   // Read temperature
   sensors.requestTemperatures();
-  delay(750); // Wait for conversion
   float t = sensors.getTempCByIndex(0);
-  if (t == DEVICE_DISCONNECTED_C || t < -50 || t > 100) {
+  if (t == DEVICE_DISCONNECTED_C) {
     tempReadErrors++;
-    if (tempReadErrors >= MAX_READ_ERRORS) {
-      temperature = DEVICE_DISCONNECTED_C;
-      temperatureStatus = "Error";
-    }
+    temperature = DEVICE_DISCONNECTED_C;
+    temperatureStatus = "Error";
   } else {
     temperature = t;
     temperatureStatus = getTemperatureStatus(t);
     tempReadErrors = 0;
   }
+
+  // Print sensor readings
+  Serial.println("=== Sensor Readings ===");
+  Serial.println("Distance: " + String(distance) + " cm (" + distanceStatus + ")");
+  Serial.println("Soil Moisture: " + String(soilPct) + "% (" + moistureStatus + ")");
+  Serial.println("Temperature: " + String(temperature) + "°C (" + temperatureStatus + ")");
+  Serial.println("Rain: " + String(rd_wetPct) + "% (" + rd_klas + ")");
+  Serial.println("WiFi Signal: " + String(WiFi.RSSI()) + " dBm");
+  Serial.println("Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
 
   // Send to web server
   if (millis() - lastWebUpdate >= webUpdateInterval) {
@@ -358,10 +319,10 @@ void sampleSensors() {
 /***** SETUP *****/
 void setup() {
   Serial.begin(115200);
-  Serial.println("=== IoT Kelapa Sawit Monitor v2.1.0 ===");
-  Serial.println("Device ID: " + DEVICE_ID);
-  Serial.println("Device Name: " + DEVICE_NAME);
-  Serial.println("Location: " + LOCATION);
+  Serial.println("=== IoT Kelapa Sawit Monitor ===");
+  Serial.println("Device ID: " + String(DEVICE_ID));
+  Serial.println("Device Name: " + String(DEVICE_NAME));
+  Serial.println("Location: " + String(LOCATION));
 
   Wire.begin();
   lcd.init(); 
@@ -386,7 +347,7 @@ void setup() {
 
   // Connect to WiFi
   Serial.println("Connecting to WiFi: " + String(ssid));
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, pass);
 
   int wifiAttempts = 0;
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 30) {
@@ -455,12 +416,8 @@ void loop() {
   }
 
   // Check WiFi connection periodically
-  static unsigned long lastWifiCheck = 0;
-  if (millis() - lastWifiCheck > 30000) { // Check every 30 seconds
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi disconnected. Attempting to reconnect...");
-      reconnectWiFi();
-    }
-    lastWifiCheck = millis();
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Attempting to reconnect...");
+    WiFi.reconnect();
   }
 }
