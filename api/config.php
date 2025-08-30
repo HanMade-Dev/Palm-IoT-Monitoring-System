@@ -1,4 +1,3 @@
-
 <?php
 // Database configuration for production
 define('DB_HOST', 'localhost');
@@ -66,7 +65,17 @@ function sendResponse($success, $data = null, $message = null) {
  * Logs a message.
  */
 function logMessage($message) {
-    error_log("[IoT Monitor] " . date('Y-m-d H:i:s') . " - " . $message);
+    $timestamp = date('Y-m-d H:i:s');
+    $logFile = __DIR__ . '/../storage/logs/app.log';
+
+    // Ensure log directory exists
+    $logDir = dirname($logFile);
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+
+    $logEntry = "[$timestamp] $message" . PHP_EOL;
+    file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
 }
 
 /**
@@ -83,9 +92,9 @@ function sanitizeInput($data) {
 /**
  * Validates API key for specific device.
  */
-function validateApiKey($providedKey, $deviceId = null) {
+function validateApiKey($apiKey, $deviceId = null) {
     require_once __DIR__ . '/../config/api_keys.php';
-    return verifyApiKey($providedKey, $deviceId);
+    return verifyApiKey($apiKey, $deviceId);
 }
 
 /**
@@ -220,7 +229,7 @@ function flushBufferToDatabase() {
 
         // Clear buffer file after successful flush
         file_put_contents(BUFFER_FILE, '');
-        
+
         logMessage("Buffer flushed successfully: $processedCount records processed");
         return true;
 

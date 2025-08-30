@@ -51,7 +51,8 @@ try {
     }
 
     // Validate API key for device
-    if (!validateApiKey($api_key, $data['device_id'])) {
+    require_once '../config/api_keys.php';
+    if (!verifyApiKey($api_key, $data['device_id'])) {
         http_response_code(403);
         sendResponse(false, null, 'Invalid API key for device');
         exit;

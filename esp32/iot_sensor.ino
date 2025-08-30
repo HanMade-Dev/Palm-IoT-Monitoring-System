@@ -156,10 +156,13 @@ void sendDataToWebServer() {
   }
 
   Serial.println("Sending data to server...");
+  Serial.println("Using API Key: " + API_KEY);
+  Serial.println("Server URL: " + String(serverURL));
 
   HTTPClient http;
   http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-API-Key", API_KEY);
   http.setTimeout(10000);  // 10 second timeout
 
   StaticJsonDocument<512> doc;
