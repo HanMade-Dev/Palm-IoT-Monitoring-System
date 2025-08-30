@@ -107,6 +107,158 @@
             </div>
         </div>
 
+        <!-- Analytics Summary -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-chart-bar"></i> Analisis Data Historis
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-lg-3 col-md-6 mb-3">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">
+                                        <i class="fas fa-water text-primary me-2"></i>Jarak Air
+                                    </div>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Min</div>
+                                                <div class="analytics-value text-success" id="distance-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Avg</div>
+                                                <div class="analytics-value text-primary" id="distance-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Max</div>
+                                                <div class="analytics-value text-danger" id="distance-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6 mb-3">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">
+                                        <i class="fas fa-tint text-success me-2"></i>Kelembaban Tanah
+                                    </div>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Min</div>
+                                                <div class="analytics-value text-danger" id="moisture-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Avg</div>
+                                                <div class="analytics-value text-primary" id="moisture-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Max</div>
+                                                <div class="analytics-value text-success" id="moisture-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6 mb-3">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">
+                                        <i class="fas fa-thermometer-half text-warning me-2"></i>Suhu Udara
+                                    </div>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Min</div>
+                                                <div class="analytics-value text-info" id="temperature-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Avg</div>
+                                                <div class="analytics-value text-warning" id="temperature-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Max</div>
+                                                <div class="analytics-value text-danger" id="temperature-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6 mb-3">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">
+                                        <i class="fas fa-cloud-rain text-info me-2"></i>Status Hujan
+                                    </div>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Min</div>
+                                                <div class="analytics-value text-success" id="rain-min">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Avg</div>
+                                                <div class="analytics-value text-primary" id="rain-avg">--</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="analytics-item">
+                                                <div class="analytics-label">Max</div>
+                                                <div class="analytics-value text-danger" id="rain-max">--</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <hr class="my-3">
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <div class="analytics-item">
+                                    <div class="analytics-label">Total Data Points</div>
+                                    <div class="analytics-value text-info" id="total-data-points">--</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="analytics-item">
+                                    <div class="analytics-label">Periode Data</div>
+                                    <div class="analytics-value text-secondary" id="data-period">--</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="analytics-item">
+                                    <div class="analytics-label">Device Count</div>
+                                    <div class="analytics-value text-primary" id="device-count">--</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="analytics-item">
+                                    <div class="analytics-label">Status</div>
+                                    <div class="analytics-value text-success" id="data-status">Ready</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Chart -->
         <div class="row mb-4">
             <div class="col-12">

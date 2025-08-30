@@ -2,73 +2,83 @@
 <?php
 require_once 'config.php';
 
+header('Content-Type: application/json');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// Only accept POST requests
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    sendResponse(false, null, 'Method not allowed');
+    exit;
+}
+
 try {
-    $input = json_decode(file_get_contents('php://input'), true);
-    
-    if (!$input) {
-        http_response_code(400);
-        sendResponse(false, null, 'Invalid JSON input');
-        exit;
+    // Get input data
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Invalid JSON data');
     }
-    
-    $deviceId = isset($input['device_id']) ? trim($input['device_id']) : '';
-    
-    if (empty($deviceId)) {
-        http_response_code(400);
-        sendResponse(false, null, 'Device ID is required');
-        exit;
+
+    // Validate required fields
+    if (!isset($data['device_id']) || empty(trim($data['device_id']))) {
+        throw new Exception('Device ID is required');
     }
-    
+
+    $deviceId = sanitizeInput($data['device_id']);
     $pdo = getDBConnection();
-    
+
     // Check if device exists
-    $checkSql = "SELECT device_id, device_name FROM devices WHERE device_id = ?";
+    $checkSql = "SELECT device_id FROM devices WHERE device_id = ?";
     $checkStmt = $pdo->prepare($checkSql);
     $checkStmt->execute([$deviceId]);
-    $device = $checkStmt->fetch();
     
-    if (!$device) {
-        http_response_code(404);
-        sendResponse(false, null, 'Device not found');
-        exit;
+    if (!$checkStmt->fetch()) {
+        throw new Exception('Device not found');
     }
-    
+
     // Start transaction
     $pdo->beginTransaction();
-    
+
     try {
-        // Delete device status
-        $statusSql = "DELETE FROM device_status WHERE device_id = ?";
-        $statusStmt = $pdo->prepare($statusSql);
-        $statusStmt->execute([$deviceId]);
-        
+        // Delete device status first (due to foreign key)
+        $deleteStatusSql = "DELETE FROM device_status WHERE device_id = ?";
+        $deleteStatusStmt = $pdo->prepare($deleteStatusSql);
+        $deleteStatusStmt->execute([$deviceId]);
+
         // Delete sensor data
-        $dataSql = "DELETE FROM sensor_data WHERE device_id = ?";
-        $dataStmt = $pdo->prepare($dataSql);
-        $dataStmt->execute([$deviceId]);
-        
+        $deleteSensorSql = "DELETE FROM sensor_data WHERE device_id = ?";
+        $deleteSensorStmt = $pdo->prepare($deleteSensorSql);
+        $deleteSensorStmt->execute([$deviceId]);
+
         // Delete device
-        $deviceSql = "DELETE FROM devices WHERE device_id = ?";
-        $deviceStmt = $pdo->prepare($deviceSql);
-        $deviceStmt->execute([$deviceId]);
-        
-        // Commit transaction
+        $deleteDeviceSql = "DELETE FROM devices WHERE device_id = ?";
+        $deleteDeviceStmt = $pdo->prepare($deleteDeviceSql);
+        $deleteDeviceStmt->execute([$deviceId]);
+
+        // Remove API key
+        require_once '../config/api_keys.php';
+        removeApiKey($deviceId);
+
         $pdo->commit();
         
-        sendResponse(true, [
-            'device_id' => $deviceId,
-            'device_name' => $device['device_name']
-        ]);
-        
+        logMessage("Device deleted successfully: $deviceId");
+        sendResponse(true, ['device_id' => $deviceId], 'Device deleted successfully');
+
     } catch (Exception $e) {
-        // Rollback transaction on error
-        $pdo->rollback();
+        $pdo->rollBack();
         throw $e;
     }
-    
+
 } catch (Exception $e) {
     logMessage("Error deleting device: " . $e->getMessage());
-    http_response_code(500);
-    sendResponse(false, null, 'Failed to delete device');
+    http_response_code(400);
+    sendResponse(false, null, $e->getMessage());
 }
 ?>

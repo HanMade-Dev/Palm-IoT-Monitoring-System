@@ -44,12 +44,15 @@
                     <h2><i class="fas fa-chart-line"></i> Dashboard Real-time</h2>
                     <div class="d-flex align-items-center gap-3">
                         <div class="connection-options">
-                            <button class="btn btn-outline-success btn-sm me-2" onclick="window.iotDashboard.addSerialPort()">
+                            <button class="btn btn-outline-success btn-sm" onclick="window.iotDashboard.addSerialPort()">
                                 <i class="fas fa-plus me-1"></i>
                                 Add Port
                             </button>
-                            <button type="button" class="btn btn-success" onclick="window.iotDashboard.showManageDeviceModal()">
+                            <button type="button" class="btn btn-success ms-2" onclick="window.iotDashboard.showManageDeviceModal()">
                                 <i class="fas fa-cogs"></i> Manage Device
+                            </button>
+                            <button type="button" class="btn btn-outline-primary ms-2" onclick="window.iotDashboard.refreshData()">
+                                <i class="fas fa-sync-alt"></i> Refresh
                             </button>
                         </div>
                         <div class="status-indicator">
@@ -181,89 +184,7 @@
                         </div>
                     </div>
 
-                    <!-- Analytics Summary -->
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-chart-bar"></i> Analisis Data
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h6 class="text-primary mb-3">
-                                        <i class="fas fa-tint me-2"></i>Kelembaban Tanah
-                                    </h6>
-                                    <div class="row text-center">
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Minimum</div>
-                                                <div class="analytics-value text-danger" id="moisture-min">--</div>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Rata-rata</div>
-                                                <div class="analytics-value text-primary" id="moisture-avg">--</div>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Maksimum</div>
-                                                <div class="analytics-value text-success" id="moisture-max">--</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="text-warning mb-3">
-                                        <i class="fas fa-thermometer-half me-2"></i>Suhu Udara
-                                    </h6>
-                                    <div class="row text-center">
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Minimum</div>
-                                                <div class="analytics-value text-info" id="temperature-min">--</div>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Rata-rata</div>
-                                                <div class="analytics-value text-warning" id="temperature-avg">--</div>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="analytics-item">
-                                                <div class="analytics-label">Maksimum</div>
-                                                <div class="analytics-value text-danger" id="temperature-max">--</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <hr class="my-3">
-                            <div class="row text-center">
-                                <div class="col-md-4">
-                                    <div class="analytics-item">
-                                        <div class="analytics-label">Total Pembacaan</div>
-                                        <div class="analytics-value text-info" id="total-readings">--</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="analytics-item">
-                                        <div class="analytics-label">Data Points</div>
-                                        <div class="analytics-value text-secondary" id="data-points">--</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="analytics-item">
-                                        <div class="analytics-label">Rentang Waktu</div>
-                                        <div class="analytics-value text-muted" id="time-span">--</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    
 
                     <!-- Chart -->
                     <div class="card">

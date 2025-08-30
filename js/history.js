@@ -211,6 +211,7 @@ class IoTHistory {
             if (data.success) {
                 this.updateTable(data.data);
                 this.updateChart(data.chart_data || data.data);
+                this.updateAnalytics(data.data);
                 this.updatePagination(data.pagination);
                 this.totalRecords = data.pagination.total;
                 this.currentPage = page;
@@ -305,6 +306,120 @@ class IoTHistory {
         });
 
         this.chart.update();
+    }
+
+    updateAnalytics(data) {
+        if (!data || data.length === 0) {
+            this.resetAnalytics();
+            return;
+        }
+
+        // Extract valid data
+        const distances = data.map(row => row.distance).filter(val => val !== null && val !== undefined);
+        const moistures = data.map(row => row.soil_moisture).filter(val => val !== null && val !== undefined);
+        const temperatures = data.map(row => row.temperature).filter(val => val !== null && val !== undefined);
+        const rains = data.map(row => row.rain_percentage).filter(val => val !== null && val !== undefined);
+
+        // Distance analytics
+        if (distances.length > 0) {
+            const distanceMin = Math.min(...distances);
+            const distanceMax = Math.max(...distances);
+            const distanceAvg = distances.reduce((a, b) => a + b, 0) / distances.length;
+
+            document.getElementById('distance-min').textContent = `${distanceMin} cm`;
+            document.getElementById('distance-max').textContent = `${distanceMax} cm`;
+            document.getElementById('distance-avg').textContent = `${distanceAvg.toFixed(1)} cm`;
+        } else {
+            document.getElementById('distance-min').textContent = '--';
+            document.getElementById('distance-max').textContent = '--';
+            document.getElementById('distance-avg').textContent = '--';
+        }
+
+        // Moisture analytics
+        if (moistures.length > 0) {
+            const moistureMin = Math.min(...moistures);
+            const moistureMax = Math.max(...moistures);
+            const moistureAvg = moistures.reduce((a, b) => a + b, 0) / moistures.length;
+
+            document.getElementById('moisture-min').textContent = `${moistureMin}%`;
+            document.getElementById('moisture-max').textContent = `${moistureMax}%`;
+            document.getElementById('moisture-avg').textContent = `${moistureAvg.toFixed(1)}%`;
+        } else {
+            document.getElementById('moisture-min').textContent = '--';
+            document.getElementById('moisture-max').textContent = '--';
+            document.getElementById('moisture-avg').textContent = '--';
+        }
+
+        // Temperature analytics
+        if (temperatures.length > 0) {
+            const tempMin = Math.min(...temperatures);
+            const tempMax = Math.max(...temperatures);
+            const tempAvg = temperatures.reduce((a, b) => a + b, 0) / temperatures.length;
+
+            document.getElementById('temperature-min').textContent = `${tempMin.toFixed(1)}°C`;
+            document.getElementById('temperature-max').textContent = `${tempMax.toFixed(1)}°C`;
+            document.getElementById('temperature-avg').textContent = `${tempAvg.toFixed(1)}°C`;
+        } else {
+            document.getElementById('temperature-min').textContent = '--';
+            document.getElementById('temperature-max').textContent = '--';
+            document.getElementById('temperature-avg').textContent = '--';
+        }
+
+        // Rain analytics
+        if (rains.length > 0) {
+            const rainMin = Math.min(...rains);
+            const rainMax = Math.max(...rains);
+            const rainAvg = rains.reduce((a, b) => a + b, 0) / rains.length;
+
+            document.getElementById('rain-min').textContent = `${rainMin}%`;
+            document.getElementById('rain-max').textContent = `${rainMax}%`;
+            document.getElementById('rain-avg').textContent = `${rainAvg.toFixed(1)}%`;
+        } else {
+            document.getElementById('rain-min').textContent = '--';
+            document.getElementById('rain-max').textContent = '--';
+            document.getElementById('rain-avg').textContent = '--';
+        }
+
+        // General analytics
+        document.getElementById('total-data-points').textContent = data.length;
+        
+        // Device count
+        const uniqueDevices = [...new Set(data.map(row => row.device_id))];
+        document.getElementById('device-count').textContent = uniqueDevices.length;
+
+        // Data period
+        if (data.length > 1) {
+            const firstDate = new Date(data[0].timestamp);
+            const lastDate = new Date(data[data.length - 1].timestamp);
+            const period = `${firstDate.toLocaleDateString('id-ID')} - ${lastDate.toLocaleDateString('id-ID')}`;
+            document.getElementById('data-period').textContent = period;
+        } else if (data.length === 1) {
+            const date = new Date(data[0].timestamp);
+            document.getElementById('data-period').textContent = date.toLocaleDateString('id-ID');
+        } else {
+            document.getElementById('data-period').textContent = '--';
+        }
+
+        document.getElementById('data-status').textContent = 'Loaded';
+    }
+
+    resetAnalytics() {
+        const analyticIds = [
+            'distance-min', 'distance-max', 'distance-avg',
+            'moisture-min', 'moisture-max', 'moisture-avg', 
+            'temperature-min', 'temperature-max', 'temperature-avg',
+            'rain-min', 'rain-max', 'rain-avg',
+            'total-data-points', 'device-count', 'data-period'
+        ];
+
+        analyticIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = '--';
+            }
+        });
+
+        document.getElementById('data-status').textContent = 'No Data';
     }
 
     shouldShowDataset(index, sensorType) {

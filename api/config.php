@@ -1,99 +1,126 @@
 <?php
-// Database configuration
-// For PostgreSQL (uncomment for PostgreSQL hosting)
-$db_url = getenv('DATABASE_URL');
-if ($db_url) {
-    $db_info = parse_url($db_url);
-    define('DB_HOST', $db_info['host']);
-    define('DB_USERNAME', $db_info['user']);
-    define('DB_PASSWORD', $db_info['pass']);
-    define('DB_NAME', ltrim($db_info['path'], '/'));
-    define('DB_PORT', $db_info['port'] ?? 5432);
+if (isset($_ENV['DATABASE_URL'])) {
+    $url = parse_url($_ENV['DATABASE_URL']);
+    define('DB_HOST', $url['host']);
+    define('DB_NAME', ltrim($url['path'], '/'));
+    define('DB_USER', $url['user']);
+    define('DB_PASS', $url['pass']);
+    define('DB_PORT', $url['port'] ?? 5432);
     define('DB_TYPE', 'pgsql');
 } else {
-    // For MySQL hosting (RumahWeb, shared hosting)
-    // Configure for MySQL hosting - UPDATE THESE VALUES:
     define('DB_HOST', 'localhost');
-    define('DB_USERNAME', 'your_db_username');  // Change this
-    define('DB_PASSWORD', 'your_db_password');  // Change this
-    define('DB_NAME', 'fare1399_sawit_iot_db');      // Change this if different
+    define('DB_NAME', 'fare1399_sawit_iot_db');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
     define('DB_PORT', 3306);
     define('DB_TYPE', 'mysql');
-    
-    // Alternative: Auto-detect from environment (if your host supports it)
-    /*
-    define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-    define('DB_USERNAME', getenv('DB_USERNAME') ?: 'root');
-    define('DB_PASSWORD', getenv('DB_PASSWORD') ?: '');
-    define('DB_NAME', getenv('DB_NAME') ?: 'iot_kelapa_sawit');
-    define('DB_PORT', getenv('DB_PORT') ?: 3306);
-    define('DB_TYPE', 'mysql');
-    */
 }
 
-// Timezone
-date_default_timezone_set('Asia/Jakarta');
+// API configuration
+define('API_KEY_LENGTH', 32);
+define('RATE_LIMIT_REQUESTS', 100);
+define('RATE_LIMIT_WINDOW', 3600); // 1 hour in seconds
 
-// CORS headers for API
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-// Database connection (supports both PostgreSQL and MySQL)
+/**
+ * Establishes and returns a PDO database connection.
+ */
 function getDBConnection() {
+    $host = DB_HOST;
+    $db = DB_NAME;
+    $user = DB_USER;
+    $pass = DB_PASS;
+    $port = DB_PORT;
+
+    if (DB_TYPE === 'pgsql') {
+        $dsn = "pgsql:host=$host;port=$port;dbname=$db";
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ];
+    } else {
+        $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ];
+    }
+
     try {
-        if (DB_TYPE === 'mysql') {
-            $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-        } else {
-            $dsn = "pgsql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME;
-        }
-        
-        $pdo = new PDO(
-            $dsn,
-            DB_USERNAME,
-            DB_PASSWORD,
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false
-            ]
-        );
-        return $pdo;
+        return new PDO($dsn, $user, $pass, $options);
     } catch (PDOException $e) {
-        error_log("Database connection failed: " . $e->getMessage());
-        http_response_code(500);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Database connection failed'
-        ]);
-        exit;
+        error_log("Database connection error: " . $e->getMessage());
+        throw new PDOException($e->getMessage(), (int)$e->getCode());
     }
 }
 
-// Common response function
-function sendResponse($success, $data = null, $message = '') {
+/**
+ * Sends a JSON response.
+ */
+function sendResponse($success, $data = null, $message = null) {
     header('Content-Type: application/json');
-    $response = ['success' => $success];
-    
-    if ($data !== null) {
-        $response['data'] = $data;
-    }
-    
-    if (!empty($message)) {
-        $response['message'] = $message;
-    }
-    
-    echo json_encode($response);
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
+
+    echo json_encode([
+        'success' => $success,
+        'data' => $data,
+        'message' => $message,
+        'timestamp' => date('Y-m-d H:i:s')
+    ]);
 }
 
-// Validate and sanitize input
-function sanitizeInput($input) {
-    return htmlspecialchars(strip_tags(trim($input)));
-}
-
-// Log function for debugging
+/**
+ * Logs a message.
+ */
 function logMessage($message) {
-    $timestamp = date('Y-m-d H:i:s');
-    error_log("[$timestamp] $message");
+    error_log("[IoT Monitor] " . date('Y-m-d H:i:s') . " - " . $message);
+}
+
+/**
+ * Sanitizes user input.
+ */
+function sanitizeInput($data) {
+    if (is_null($data)) return null;
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    return $data;
+}
+
+/**
+ * Validates API key.
+ */
+function validateApiKey($providedKey) {
+    require_once '../config/api_keys.php';
+    return verifyApiKey($providedKey);
+}
+
+/**
+ * Rate limiting check.
+ */
+function checkRateLimit($identifier) {
+    // Simple rate limiting implementation
+    $file = sys_get_temp_dir() . '/rate_limit_' . md5($identifier);
+    $current_time = time();
+
+    if (file_exists($file)) {
+        $data = json_decode(file_get_contents($file), true);
+        if ($current_time - $data['window_start'] < RATE_LIMIT_WINDOW) {
+            if ($data['requests'] >= RATE_LIMIT_REQUESTS) {
+                return false;
+            }
+            $data['requests']++;
+        } else {
+            $data = ['window_start' => $current_time, 'requests' => 1];
+        }
+    } else {
+        $data = ['window_start' => $current_time, 'requests' => 1];
+    }
+
+    file_put_contents($file, json_encode($data));
+    return true;
 }
 ?>
