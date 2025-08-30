@@ -1,3 +1,4 @@
+
 /***** LIBRARIES *****/
 #include <WiFi.h>
 #include <OneWire.h>
@@ -13,15 +14,15 @@ char ssid[] = "Mulkan";  // Ganti dengan SSID WiFi Anda
 char pass[] = "14171225";  // Ganti dengan password WiFi Anda
 
 /***** WEB SERVER CONFIG *****/
-const char* serverURL = "http://iotmonitoringbycodev.my.id//api/receive_data.php";  // Ganti dengan URL server Anda
+const char* serverURL = "https://iotmonitoringbycodev.my.id/api/receive_data.php";  // Ganti dengan URL server Anda
 const uint32_t webUpdateInterval = 10000;  // 10 detik
 
 // Device Configuration
 const String DEVICE_ID = "DEVICE_TEST";
 const String DEVICE_NAME = "Sensor Test";
 const String LOCATION = "Area Test";
-const String API_KEY = "test_api_key_for_device_test";
-const String API_URL = "http://iotmonitoringbycodev.my.id/api/receive_data.php";
+const String API_KEY = "b0ad8d4bc79e03f8795f0890b0d4aebe652a20b63256cea2c9866d32f1c7fcf0";
+const String API_URL = "https://iotmonitoringbycodev.my.id/api/receive_data.php";
 
 /***** PIN DEFINITIONS *****/
 #define TRIG_PIN 23
