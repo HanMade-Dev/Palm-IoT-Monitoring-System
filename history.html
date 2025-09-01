@@ -55,12 +55,13 @@
                                 <label for="device-select-history" class="form-label">Device</label>
                                 <select class="form-select" id="device-select-history">
                                     <option value="all">Semua Device</option>
-                                    <option value="ESP32_SAWIT_01">Loading devices...</option>
+                                    <!-- Devices will be loaded here by JS -->
                                 </select>
                             </div>
                             <div class="col-lg-2 col-md-4">
                                 <label for="filter-type" class="form-label">Periode Filter</label>
                                 <select class="form-select" id="filter-type" onchange="updateDateTimeInputs()">
+                                    <option value="none">Semua Data</option>
                                     <option value="range">Range Tanggal</option>
                                     <option value="day">Harian</option>
                                     <option value="hour">Per Jam</option>
@@ -79,16 +80,6 @@
                                 <label for="datetime-input" class="form-label">Waktu Spesifik</label>
                                 <input type="datetime-local" class="form-control" id="datetime-input">
                             </div>
-                            <div class="col-lg-1 col-md-4">
-                                <label for="sensor-type" class="form-label">Sensor</label>
-                                <select class="form-select" id="sensor-type">
-                                    <option value="all">Semua</option>
-                                    <option value="distance">Jarak</option>
-                                    <option value="moisture">Lembab</option>
-                                    <option value="temperature">Suhu</option>
-                                    <option value="rain">Hujan</option>
-                                </select>
-                            </div>
                             <div class="col-lg-1 col-md-4 d-flex align-items-end">
                                 <button class="btn btn-primary me-2" onclick="applyFilter()">
                                     <i class="fas fa-search"></i> Filter
@@ -103,17 +94,53 @@
             </div>
         </div>
 
-        <!-- Chart -->
+        <!-- Chart Cards -->
         <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card h-100">
                     <div class="card-header">
                         <h5 class="card-title mb-0">
-                            <i class="fas fa-chart-line"></i> Grafik Data Historis
+                            <i class="fas fa-water"></i> Grafik Jarak Air
                         </h5>
                     </div>
                     <div class="card-body">
-                        <canvas id="historyChart" height="100"></canvas>
+                        <canvas id="chartDistance" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-tint"></i> Grafik Kelembaban Tanah
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="chartMoisture" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-thermometer-half"></i> Grafik Suhu Udara
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="chartTemperature" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 col-md-12 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-cloud-rain"></i> Grafik Status Hujan
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="chartRain" height="200"></canvas>
                     </div>
                 </div>
             </div>

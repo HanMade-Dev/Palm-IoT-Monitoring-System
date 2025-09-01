@@ -24,7 +24,6 @@ try {
 
     if ($deviceId) {
         // Get specific device
-        // Using MySQL specific DATE_SUB for connection_status calculation
         $sql = "SELECT 
             d.device_id,
             d.device_name,
@@ -37,12 +36,6 @@ try {
             ds.wifi_signal,
             ds.free_heap,
             ds.firmware_version,
-            CASE 
-                WHEN ds.last_seen IS NULL THEN 'offline'
-                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
-                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
-                ELSE 'offline'
-            END as connection_status,
             (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
             (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
         FROM devices d
@@ -55,7 +48,6 @@ try {
 
     } else {
         // Get all devices
-        // Using MySQL specific DATE_SUB for connection_status calculation
         $sql = "SELECT 
             d.device_id,
             d.device_name,
@@ -68,12 +60,6 @@ try {
             ds.wifi_signal,
             ds.free_heap,
             ds.firmware_version,
-            CASE 
-                WHEN ds.last_seen IS NULL THEN 'offline'
-                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
-                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
-                ELSE 'offline'
-            END as connection_status,
             (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
             (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
         FROM devices d
@@ -97,7 +83,7 @@ try {
             'created_at' => $device['created_at'],
             'is_online' => (bool)$device['is_online'],
             'last_seen' => $device['last_seen'],
-            'connection_status' => $device['connection_status'] ?: 'offline',
+            // connection_status will be determined by JS based on is_online
             'wifi_signal' => $device['wifi_signal'] !== null ? (int)$device['wifi_signal'] : null,
             'free_heap' => $device['free_heap'] !== null ? (int)$device['free_heap'] : null,
             'firmware_version' => $device['firmware_version'] ?: '1.0.0',

@@ -11,17 +11,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 try {
     ensureBufferDir();
-    
+
     // Auto flush buffer if needed
     autoFlushBuffer();
-    
+
     $liveData = [];
     $deviceLatest = [];
-    
+
     // Step 1: Get latest data from database
     try {
         $pdo = getDBConnection();
-        
+
         // Select latest sensor data for each device
         $sql = "SELECT 
             sd.device_id,
@@ -45,11 +45,11 @@ try {
         )
         AND d.is_active = TRUE
         ORDER BY sd.timestamp DESC";
-        
+
         $stmt = $pdo->prepare($sql);
         $stmt->execute();
         $dbData = $stmt->fetchAll();
-        
+
         // Store database data indexed by device_id
         foreach ($dbData as $data) {
             $deviceLatest[$data['device_id']] = [
@@ -69,28 +69,28 @@ try {
                 'free_heap' => $data['free_heap'],
                 'firmware_version' => $data['firmware_version'] ?? '1.0.0',
                 'source' => 'database',
-                'is_online' => (bool)$data['is_online'],
-                'last_seen' => $data['last_seen']
+                'is_online' => (bool)$data['is_online'], // Get from device_status
+                'last_seen' => $data['last_seen'] // Get from device_status
             ];
         }
     } catch (Exception $e) {
         logMessage("Database error in live.php: " . $e->getMessage());
         // Continue processing even if database read fails, buffer might still have data
     }
-    
+
     // Step 2: Read from buffer file (real-time data) and override database data if newer
     if (file_exists(BUFFER_FILE)) {
         $bufferData = file(BUFFER_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        
+
         // Process buffer data (newest first)
         foreach (array_reverse($bufferData) as $line) {
             $data = json_decode($line, true);
             if (!$data || !isset($data['device_id'])) {
                 continue;
             }
-            
+
             $deviceId = $data['device_id'];
-            
+
             // Check if this buffer data is newer than database data
             $isNewer = true;
             if (isset($deviceLatest[$deviceId])) {
@@ -98,7 +98,7 @@ try {
                 $bufferTimestamp = strtotime($data['timestamp']);
                 $isNewer = $bufferTimestamp > $dbTimestamp;
             }
-            
+
             // Only use buffer data if it's newer or if no database data exists
             if ($isNewer) {
                 $deviceLatest[$deviceId] = [
@@ -124,16 +124,49 @@ try {
             }
         }
     }
+
+    // Step 3: Check device online status based on data age
+    // Device sends data every ~15 seconds, so if no data for 45 seconds = offline
+    $offlineThreshold = 45; // seconds
+    $currentTime = time();
     
+    foreach ($deviceLatest as &$device) {
+        $lastDataTime = strtotime($device['timestamp']);
+        $secondsSinceLastData = $currentTime - $lastDataTime;
+        
+        // Update online status based on data freshness
+        if ($secondsSinceLastData > $offlineThreshold) {
+            $device['is_online'] = false;
+            // Update device_status table for persistent offline status
+            try {
+                $updateStatusStmt = $pdo->prepare("UPDATE device_status SET is_online = FALSE, updated_at = NOW() WHERE device_id = ?");
+                $updateStatusStmt->execute([$device['device_id']]);
+            } catch (Exception $e) {
+                logMessage("Failed to update offline status for device " . $device['device_id'] . ": " . $e->getMessage());
+            }
+        } else {
+            $device['is_online'] = true;
+            // Update device_status table for persistent online status
+            try {
+                $updateStatusStmt = $pdo->prepare("INSERT INTO device_status (device_id, is_online, last_seen, updated_at) VALUES (?, TRUE, ?, NOW()) ON DUPLICATE KEY UPDATE is_online = TRUE, last_seen = VALUES(last_seen), updated_at = NOW()");
+                $updateStatusStmt->execute([$device['device_id'], $device['timestamp']]);
+            } catch (Exception $e) {
+                logMessage("Failed to update online status for device " . $device['device_id'] . ": " . $e->getMessage());
+            }
+        }
+        
+        $device['seconds_since_last_data'] = $secondsSinceLastData;
+    }
+
     $liveData = array_values($deviceLatest);
-    
+
     // Sort by timestamp (newest first)
     usort($liveData, function($a, $b) {
         return strtotime($b['timestamp']) - strtotime($a['timestamp']);
     });
-    
+
     sendResponse(true, $liveData, 'Live data retrieved successfully');
-    
+
 } catch (Exception $e) {
     logMessage("Error getting live data: " . $e->getMessage());
     http_response_code(500);

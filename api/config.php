@@ -153,6 +153,7 @@ function autoFlushBuffer() {
     $timeSinceModified = time() - $lastModified;
 
     // Flush if buffer has too many lines OR if it's been too long since last flush
+    // Mengurangi interval flush agar data lebih cepat masuk ke DB
     if ($lineCount >= BUFFER_MAX_LINES || $timeSinceModified >= BUFFER_FLUSH_INTERVAL) {
         flushBufferToDatabase();
     }
@@ -169,6 +170,8 @@ function flushBufferToDatabase() {
     try {
         $lines = file(BUFFER_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if (empty($lines)) {
+            // Clear the file if it's empty but still exists, to prevent processing empty lines repeatedly
+            file_put_contents(BUFFER_FILE, '');
             return false;
         }
 
@@ -194,55 +197,67 @@ function flushBufferToDatabase() {
             updated_at = NOW()");
 
         $processedCount = 0;
+        $tempBuffer = []; // Temporary buffer to hold lines that failed to process
+
         foreach ($lines as $line) {
             $data = json_decode($line, true);
-            if (!$data || !isset($data['device_id'])) continue;
+            if (!$data || !isset($data['device_id'])) {
+                // If data is invalid, add to tempBuffer and skip
+                $tempBuffer[] = $line;
+                continue;
+            }
 
-            // Insert device (if not exists)
-            $deviceStmt->execute([
-                $data['device_id'],
-                $data['device_name'] ?? 'Unknown Device',
-                $data['device_location'] ?? 'Unknown Location'
-            ]);
+            try {
+                // Insert device (if not exists)
+                $deviceStmt->execute([
+                    $data['device_id'],
+                    $data['device_name'] ?? 'Unknown Device',
+                    $data['device_location'] ?? 'Unknown Location'
+                ]);
 
-            // Calculate status
-            $distanceStatus = getDistanceStatus($data['distance']);
-            $moistureStatus = getMoistureStatus($data['soil_moisture']);
-            $temperatureStatus = getTemperatureStatus($data['temperature']);
-            $rainStatus = getRainStatus($data['rain_percentage']);
+                // Calculate status
+                $distanceStatus = getDistanceStatus($data['distance'] ?? null);
+                $moistureStatus = getMoistureStatus($data['soil_moisture'] ?? null);
+                $temperatureStatus = getTemperatureStatus($data['temperature'] ?? null);
+                $rainStatus = getRainStatus($data['rain_percentage'] ?? null);
 
-            // Insert sensor data
-            $sensorStmt->execute([
-                $data['device_id'],
-                $data['distance'],
-                $distanceStatus,
-                $data['soil_moisture'],
-                $moistureStatus,
-                $data['temperature'],
-                $temperatureStatus,
-                $data['rain_percentage'],
-                $rainStatus,
-                $data['timestamp']
-            ]);
+                // Insert sensor data
+                $sensorStmt->execute([
+                    $data['device_id'],
+                    $data['distance'] ?? null,
+                    $distanceStatus,
+                    $data['soil_moisture'] ?? null,
+                    $moistureStatus,
+                    $data['temperature'] ?? null,
+                    $temperatureStatus,
+                    $data['rain_percentage'] ?? null,
+                    $rainStatus,
+                    $data['timestamp'] ?? date('Y-m-d H:i:s')
+                ]);
 
-            // Update device status
-            $statusStmt->execute([
-                $data['device_id'],
-                $data['timestamp'],
-                $data['wifi_signal'] ?? null,
-                $data['free_heap'] ?? null,
-                $data['firmware_version'] ?? '1.0.0'
-            ]);
+                // Update device status
+                $statusStmt->execute([
+                    $data['device_id'],
+                    $data['timestamp'] ?? date('Y-m-d H:i:s'),
+                    $data['wifi_signal'] ?? null,
+                    $data['free_heap'] ?? null,
+                    $data['firmware_version'] ?? '1.0.0'
+                ]);
 
-            $processedCount++;
+                $processedCount++;
+            } catch (PDOException $e) {
+                // Log specific PDO error for this line, but continue processing others
+                logMessage("Failed to process buffer line for device {$data['device_id']}: " . $e->getMessage());
+                $tempBuffer[] = $line; // Add back to tempBuffer if processing failed
+            }
         }
 
         $pdo->commit();
 
-        // Clear buffer file after successful flush
-        file_put_contents(BUFFER_FILE, '');
+        // Rewrite buffer file with only unprocessed lines
+        file_put_contents(BUFFER_FILE, implode('', $tempBuffer));
 
-        logMessage("Buffer flushed successfully: $processedCount records processed");
+        logMessage("Buffer flushed successfully: $processedCount records processed. " . count($tempBuffer) . " lines remaining in buffer.");
         return true;
 
     } catch (Exception $e) {
@@ -254,6 +269,7 @@ function flushBufferToDatabase() {
     }
 }
 
+// Fungsi-fungsi status ini sudah ada di kode Anda, pastikan mereka mengembalikan string yang sesuai
 function getDistanceStatus($distance) {
     if ($distance === null || $distance < 0) return 'Error';
     if ($distance < 20) return 'Tinggi';

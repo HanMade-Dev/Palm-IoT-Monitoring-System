@@ -104,6 +104,31 @@ try {
         throw new Exception('Failed to write to buffer');
     }
 
+    // Update device status to online when receiving data
+    try {
+        $pdo = getDBConnection();
+        $statusStmt = $pdo->prepare("INSERT INTO device_status (
+            device_id, is_online, last_seen, wifi_signal, free_heap, firmware_version, created_at, updated_at
+        ) VALUES (?, TRUE, ?, ?, ?, ?, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            is_online = TRUE,
+            last_seen = VALUES(last_seen),
+            wifi_signal = VALUES(wifi_signal),
+            free_heap = VALUES(free_heap),
+            firmware_version = VALUES(firmware_version),
+            updated_at = NOW()");
+        
+        $statusStmt->execute([
+            $deviceId,
+            $bufferData['timestamp'],
+            $bufferData['wifi_signal'],
+            $bufferData['free_heap'],
+            $bufferData['firmware_version']
+        ]);
+    } catch (Exception $e) {
+        logMessage("Failed to update device status for $deviceId: " . $e->getMessage());
+    }
+
     logMessage("Data buffered successfully for device $deviceId - Moisture: $soilMoisture%, Temp: {$temperature}°C, Rain: $rainPercentage%");
     sendResponse(true, ['device_id' => $deviceId, 'buffered' => true], 'Data received and buffered successfully');
 

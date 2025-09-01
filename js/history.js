@@ -14,9 +14,9 @@ class IoTHistory {
 
     init() {
         this.setupChart();
-        this.setupDateDefaults();
+        this.setupDateDefaults(); // Set default date inputs
         this.loadDevices();
-        this.loadHistoryData(); // Initial load
+        this.loadHistoryData(); // Initial load without specific filters
         this.setupEventListeners();
         updateDateTimeInputs(); // Call once to set initial visibility
     }
@@ -157,12 +157,10 @@ class IoTHistory {
     }
 
     setupDateDefaults() {
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        document.getElementById('start-date').value = yesterday.toISOString().split('T')[0];
-        document.getElementById('end-date').value = today.toISOString().split('T')[0];
+        // Set filter type to 'all' or 'range' with empty dates for default all data
+        document.getElementById('filter-type').value = 'range'; // Default to range, but with empty dates
+        document.getElementById('start-date').value = ''; // Empty by default
+        document.getElementById('end-date').value = ''; // Empty by default
         
         // Set default datetime for minute/hour filters to current time
         const now = new Date();
@@ -208,7 +206,7 @@ class IoTHistory {
                 page: page,
                 limit: this.recordsPerPage,
                 sensor_type: document.getElementById('sensor-type').value, // Used for chart visibility
-                filter_type: filterType
+                filter_type: filterType // Pass filter type to backend
             });
             
             // Add device filter
@@ -216,13 +214,15 @@ class IoTHistory {
                 params.append('device_id', deviceId);
             }
 
-            // Add date/time parameters based on filter type
+            // Add date/time parameters based on filter type, ONLY if they have values
             if (filterType === 'range') {
-                params.append('start_date', document.getElementById('start-date').value);
-                params.append('end_date', document.getElementById('end-date').value);
+                const startDate = document.getElementById('start-date').value;
+                const endDate = document.getElementById('end-date').value;
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
             } else if (filterType === 'day') {
-                const selectedDate = document.getElementById('start-date').value;
-                params.append('target_date', selectedDate);
+                const selectedDate = document.getElementById('start-date').value; // Re-using start-date for single day
+                if (selectedDate) params.append('target_date', selectedDate);
             } else if (filterType === 'hour' || filterType === 'minute') {
                 const datetimeValue = document.getElementById('datetime-input').value;
                 if (datetimeValue) {
@@ -268,8 +268,11 @@ class IoTHistory {
         }
 
         const rows = data.map(row => {
-            const deviceInfo = this.devices.find(d => d.device_id === row.device_id);
-            const deviceName = deviceInfo ? deviceInfo.device_name : row.device_id;
+            // Use device_name and location directly from row if available (from buffer)
+            // Otherwise, find from this.devices (from DB)
+            const deviceName = row.device_name || (this.devices.find(d => d.device_id === row.device_id)?.device_name || row.device_id);
+            const location = row.location || (this.devices.find(d => d.device_id === row.device_id)?.location || '-');
+
             const datetime = new Date(row.timestamp).toLocaleString('id-ID');
             const distance = row.distance !== null ? `${row.distance} cm` : '-';
             const moisture = row.soil_moisture !== null ? `${row.soil_moisture}%` : '-';
@@ -577,11 +580,13 @@ function exportData() {
     
     // Add date/time parameters based on filter type
     if (filterType === 'range') {
-        params.append('start_date', document.getElementById('start-date').value);
-        params.append('end_date', document.getElementById('end-date').value);
+        const startDate = document.getElementById('start-date').value;
+        const endDate = document.getElementById('end-date').value;
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
     } else if (filterType === 'day') {
         const selectedDate = document.getElementById('start-date').value;
-        params.append('target_date', selectedDate);
+        if (selectedDate) params.append('target_date', selectedDate);
     } else if (filterType === 'hour' || filterType === 'minute') {
         const datetimeValue = document.getElementById('datetime-input').value;
         if (datetimeValue) {
