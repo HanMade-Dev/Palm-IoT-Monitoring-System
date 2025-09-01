@@ -1,4 +1,3 @@
-
 <?php
 require_once 'config.php';
 
@@ -20,55 +19,35 @@ try {
     $pdo = getDBConnection();
     $deviceId = isset($_GET['device_id']) ? sanitizeInput($_GET['device_id']) : null;
 
+    // Ensure device_status is up-to-date by flushing buffer
+    autoFlushBuffer();
+
     if ($deviceId) {
         // Get specific device
-        if (DB_TYPE === 'pgsql') {
-            $sql = "SELECT 
-                d.device_id,
-                d.device_name,
-                d.location,
-                d.description,
-                d.is_active,
-                d.created_at,
-                COALESCE(ds.is_online, false) as is_online,
-                ds.last_seen,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version,
-                CASE 
-                    WHEN ds.last_seen > NOW() - INTERVAL '5 minutes' THEN 'online'
-                    WHEN ds.last_seen > NOW() - INTERVAL '30 minutes' THEN 'warning'
-                    ELSE 'offline'
-                END as connection_status,
-                (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
-                (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
-            FROM devices d
-            LEFT JOIN device_status ds ON d.device_id = ds.device_id
-            WHERE d.device_id = ? AND d.is_active = TRUE";
-        } else {
-            $sql = "SELECT 
-                d.device_id,
-                d.device_name,
-                d.location,
-                d.description,
-                d.is_active,
-                d.created_at,
-                COALESCE(ds.is_online, false) as is_online,
-                ds.last_seen,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version,
-                CASE 
-                    WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
-                    WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
-                    ELSE 'offline'
-                END as connection_status,
-                (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
-                (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
-            FROM devices d
-            LEFT JOIN device_status ds ON d.device_id = ds.device_id
-            WHERE d.device_id = ? AND d.is_active = TRUE";
-        }
+        // Using MySQL specific DATE_SUB for connection_status calculation
+        $sql = "SELECT 
+            d.device_id,
+            d.device_name,
+            d.location,
+            d.description,
+            d.is_active,
+            d.created_at,
+            COALESCE(ds.is_online, FALSE) as is_online,
+            ds.last_seen,
+            ds.wifi_signal,
+            ds.free_heap,
+            ds.firmware_version,
+            CASE 
+                WHEN ds.last_seen IS NULL THEN 'offline'
+                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
+                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
+                ELSE 'offline'
+            END as connection_status,
+            (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
+            (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
+        FROM devices d
+        LEFT JOIN device_status ds ON d.device_id = ds.device_id
+        WHERE d.device_id = ? AND d.is_active = TRUE";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$deviceId]);
@@ -76,55 +55,31 @@ try {
 
     } else {
         // Get all devices
-        if (DB_TYPE === 'pgsql') {
-            $sql = "SELECT 
-                d.device_id,
-                d.device_name,
-                d.location,
-                d.description,
-                d.is_active,
-                d.created_at,
-                COALESCE(ds.is_online, false) as is_online,
-                ds.last_seen,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version,
-                CASE 
-                    WHEN ds.last_seen > NOW() - INTERVAL '5 minutes' THEN 'online'
-                    WHEN ds.last_seen > NOW() - INTERVAL '30 minutes' THEN 'warning'
-                    ELSE 'offline'
-                END as connection_status,
-                (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
-                (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
-            FROM devices d
-            LEFT JOIN device_status ds ON d.device_id = ds.device_id
-            WHERE d.is_active = TRUE
-            ORDER BY d.device_name";
-        } else {
-            $sql = "SELECT 
-                d.device_id,
-                d.device_name,
-                d.location,
-                d.description,
-                d.is_active,
-                d.created_at,
-                COALESCE(ds.is_online, false) as is_online,
-                ds.last_seen,
-                ds.wifi_signal,
-                ds.free_heap,
-                ds.firmware_version,
-                CASE 
-                    WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
-                    WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
-                    ELSE 'offline'
-                END as connection_status,
-                (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
-                (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
-            FROM devices d
-            LEFT JOIN device_status ds ON d.device_id = ds.device_id
-            WHERE d.is_active = TRUE
-            ORDER BY d.device_name";
-        }
+        // Using MySQL specific DATE_SUB for connection_status calculation
+        $sql = "SELECT 
+            d.device_id,
+            d.device_name,
+            d.location,
+            d.description,
+            d.is_active,
+            d.created_at,
+            COALESCE(ds.is_online, FALSE) as is_online,
+            ds.last_seen,
+            ds.wifi_signal,
+            ds.free_heap,
+            ds.firmware_version,
+            CASE 
+                WHEN ds.last_seen IS NULL THEN 'offline'
+                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 'online'
+                WHEN ds.last_seen > DATE_SUB(NOW(), INTERVAL 30 MINUTE) THEN 'warning'
+                ELSE 'offline'
+            END as connection_status,
+            (SELECT COUNT(*) FROM sensor_data WHERE device_id = d.device_id) as total_readings,
+            (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
+        FROM devices d
+        LEFT JOIN device_status ds ON d.device_id = ds.device_id
+        WHERE d.is_active = TRUE
+        ORDER BY d.device_name";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute();

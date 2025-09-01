@@ -16,8 +16,9 @@ class IoTHistory {
         this.setupChart();
         this.setupDateDefaults();
         this.loadDevices();
-        this.loadHistoryData();
+        this.loadHistoryData(); // Initial load
         this.setupEventListeners();
+        updateDateTimeInputs(); // Call once to set initial visibility
     }
 
     setupChart() {
@@ -31,28 +32,28 @@ class IoTHistory {
                     data: [],
                     borderColor: '#0dcaf0',
                     backgroundColor: 'rgba(13, 202, 240, 0.1)',
-                    yAxisID: 'y',
+                    yAxisID: 'y_distance',
                     hidden: false
                 }, {
                     label: 'Kelembaban Tanah (%)',
                     data: [],
                     borderColor: '#198754',
                     backgroundColor: 'rgba(25, 135, 84, 0.1)',
-                    yAxisID: 'y1',
+                    yAxisID: 'y_moisture',
                     hidden: false
                 }, {
                     label: 'Suhu Udara (°C)',
                     data: [],
                     borderColor: '#ffc107',
                     backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                    yAxisID: 'y2',
+                    yAxisID: 'y_temperature',
                     hidden: false
                 }, {
                     label: 'Hujan (%)',
                     data: [],
                     borderColor: '#6f42c1',
                     backgroundColor: 'rgba(111, 66, 193, 0.1)',
-                    yAxisID: 'y1',
+                    yAxisID: 'y_rain',
                     hidden: false
                 }]
             },
@@ -71,22 +72,24 @@ class IoTHistory {
                             text: 'Waktu'
                         }
                     },
-                    y: {
+                    y_distance: {
                         type: 'linear',
                         display: true,
                         position: 'left',
                         title: {
                             display: true,
                             text: 'Jarak (cm)'
-                        }
+                        },
+                        min: 0,
+                        max: 100 // Adjust max based on expected distance range
                     },
-                    y1: {
+                    y_moisture: {
                         type: 'linear',
                         display: true,
                         position: 'right',
                         title: {
                             display: true,
-                            text: 'Persentase (%)'
+                            text: 'Kelembaban (%)'
                         },
                         min: 0,
                         max: 100,
@@ -94,14 +97,33 @@ class IoTHistory {
                             drawOnChartArea: false,
                         },
                     },
-                    y2: {
+                    y_temperature: {
                         type: 'linear',
-                        display: false,
+                        display: true,
                         position: 'right',
                         title: {
                             display: true,
                             text: 'Suhu (°C)'
-                        }
+                        },
+                        min: 0,
+                        max: 50, // Adjust max based on expected temperature range
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y_rain: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Hujan (%)'
+                        },
+                        min: 0,
+                        max: 100,
+                        grid: {
+                            drawOnChartArea: false,
+                        },
                     }
                 },
                 plugins: {
@@ -113,17 +135,19 @@ class IoTHistory {
                             const chart = this.chart;
                             const meta = chart.getDatasetMeta(index);
                             
+                            // Toggle visibility
                             meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null;
                             chart.update();
                         }
                     },
                     tooltip: {
                         callbacks: {
-                            afterLabel: function(context) {
-                                const datasetLabel = context.dataset.label;
-                                if (datasetLabel.includes('Jarak')) return 'cm';
-                                if (datasetLabel.includes('Suhu')) return '°C';
-                                return '%';
+                            label: function(context) {
+                                const datasetLabel = context.dataset.label || '';
+                                const value = context.parsed.y;
+                                if (datasetLabel.includes('Jarak')) return `${datasetLabel}: ${value} cm`;
+                                if (datasetLabel.includes('Suhu')) return `${datasetLabel}: ${value}°C`;
+                                return `${datasetLabel}: ${value}%`;
                             }
                         }
                     }
@@ -140,7 +164,7 @@ class IoTHistory {
         document.getElementById('start-date').value = yesterday.toISOString().split('T')[0];
         document.getElementById('end-date').value = today.toISOString().split('T')[0];
         
-        // Set default datetime for minute/hour filters
+        // Set default datetime for minute/hour filters to current time
         const now = new Date();
         const datetimeString = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:MM
         document.getElementById('datetime-input').value = datetimeString;
@@ -154,9 +178,11 @@ class IoTHistory {
             if (data.success) {
                 this.devices = data.data;
                 this.updateDeviceSelector();
+            } else {
+                console.error('Failed to load devices for history filter:', data.message);
             }
         } catch (error) {
-            console.error('Error loading devices:', error);
+            console.error('Error loading devices for history filter:', error);
         }
     }
     
@@ -181,7 +207,7 @@ class IoTHistory {
             const params = new URLSearchParams({
                 page: page,
                 limit: this.recordsPerPage,
-                sensor_type: document.getElementById('sensor-type').value,
+                sensor_type: document.getElementById('sensor-type').value, // Used for chart visibility
                 filter_type: filterType
             });
             
@@ -210,7 +236,7 @@ class IoTHistory {
             
             if (data.success) {
                 this.updateTable(data.data);
-                this.updateChart(data.chart_data || data.data);
+                this.updateChart(data.data); // Chart uses the same data as table
                 this.updateAnalytics(data.data);
                 this.updatePagination(data.pagination);
                 this.totalRecords = data.pagination.total;
@@ -246,9 +272,9 @@ class IoTHistory {
             const deviceName = deviceInfo ? deviceInfo.device_name : row.device_id;
             const datetime = new Date(row.timestamp).toLocaleString('id-ID');
             const distance = row.distance !== null ? `${row.distance} cm` : '-';
-            const moisture = `${row.soil_moisture}%`;
+            const moisture = row.soil_moisture !== null ? `${row.soil_moisture}%` : '-';
             const temperature = row.temperature !== null ? `${parseFloat(row.temperature).toFixed(1)}°C` : '-';
-            const rain = `${row.rain_percentage}%`;
+            const rain = row.rain_percentage !== null ? `${row.rain_percentage}%` : '-';
             const status = this.getOverallStatus(row);
             
             return `
@@ -277,10 +303,13 @@ class IoTHistory {
             return;
         }
 
-        // Limit data points for better performance
-        const maxPoints = 100;
-        const step = Math.max(1, Math.floor(data.length / maxPoints));
-        const filteredData = data.filter((_, index) => index % step === 0);
+        // Sort data by timestamp ascending for chart
+        const sortedData = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        // Limit data points for better performance on chart
+        const maxPoints = 200; // Max points to display on chart
+        const step = Math.max(1, Math.floor(sortedData.length / maxPoints));
+        const filteredData = sortedData.filter((_, index) => index % step === 0);
 
         this.chart.data.labels = filteredData.map(row => {
             const date = new Date(row.timestamp);
@@ -288,9 +317,9 @@ class IoTHistory {
                    date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         });
 
-        this.chart.data.datasets[0].data = filteredData.map(row => row.distance || 0);
+        this.chart.data.datasets[0].data = filteredData.map(row => row.distance);
         this.chart.data.datasets[1].data = filteredData.map(row => row.soil_moisture);
-        this.chart.data.datasets[2].data = filteredData.map(row => row.temperature || 0);
+        this.chart.data.datasets[2].data = filteredData.map(row => row.temperature);
         this.chart.data.datasets[3].data = filteredData.map(row => row.rain_percentage);
 
         // Hide datasets based on sensor type filter
@@ -314,71 +343,40 @@ class IoTHistory {
             return;
         }
 
-        // Extract valid data
+        // Extract valid data points, filtering out null/undefined
         const distances = data.map(row => row.distance).filter(val => val !== null && val !== undefined);
         const moistures = data.map(row => row.soil_moisture).filter(val => val !== null && val !== undefined);
         const temperatures = data.map(row => row.temperature).filter(val => val !== null && val !== undefined);
         const rains = data.map(row => row.rain_percentage).filter(val => val !== null && val !== undefined);
 
-        // Distance analytics
-        if (distances.length > 0) {
-            const distanceMin = Math.min(...distances);
-            const distanceMax = Math.max(...distances);
-            const distanceAvg = distances.reduce((a, b) => a + b, 0) / distances.length;
+        // Helper to calculate min, avg, max
+        const calculateStats = (arr) => {
+            if (arr.length === 0) return { min: '--', avg: '--', max: '--' };
+            const min = Math.min(...arr);
+            const max = Math.max(...arr);
+            const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+            return { min, avg, max };
+        };
 
-            document.getElementById('distance-min').textContent = `${distanceMin} cm`;
-            document.getElementById('distance-max').textContent = `${distanceMax} cm`;
-            document.getElementById('distance-avg').textContent = `${distanceAvg.toFixed(1)} cm`;
-        } else {
-            document.getElementById('distance-min').textContent = '--';
-            document.getElementById('distance-max').textContent = '--';
-            document.getElementById('distance-avg').textContent = '--';
-        }
+        const distStats = calculateStats(distances);
+        document.getElementById('distance-min').textContent = distStats.min !== '--' ? `${distStats.min} cm` : '--';
+        document.getElementById('distance-max').textContent = distStats.max !== '--' ? `${distStats.max} cm` : '--';
+        document.getElementById('distance-avg').textContent = distStats.avg !== '--' ? `${distStats.avg.toFixed(1)} cm` : '--';
 
-        // Moisture analytics
-        if (moistures.length > 0) {
-            const moistureMin = Math.min(...moistures);
-            const moistureMax = Math.max(...moistures);
-            const moistureAvg = moistures.reduce((a, b) => a + b, 0) / moistures.length;
+        const moistStats = calculateStats(moistures);
+        document.getElementById('moisture-min').textContent = moistStats.min !== '--' ? `${moistStats.min}%` : '--';
+        document.getElementById('moisture-max').textContent = moistStats.max !== '--' ? `${moistStats.max}%` : '--';
+        document.getElementById('moisture-avg').textContent = moistStats.avg !== '--' ? `${moistStats.avg.toFixed(1)}%` : '--';
 
-            document.getElementById('moisture-min').textContent = `${moistureMin}%`;
-            document.getElementById('moisture-max').textContent = `${moistureMax}%`;
-            document.getElementById('moisture-avg').textContent = `${moistureAvg.toFixed(1)}%`;
-        } else {
-            document.getElementById('moisture-min').textContent = '--';
-            document.getElementById('moisture-max').textContent = '--';
-            document.getElementById('moisture-avg').textContent = '--';
-        }
+        const tempStats = calculateStats(temperatures);
+        document.getElementById('temperature-min').textContent = tempStats.min !== '--' ? `${tempStats.min.toFixed(1)}°C` : '--';
+        document.getElementById('temperature-max').textContent = tempStats.max !== '--' ? `${tempStats.max.toFixed(1)}°C` : '--';
+        document.getElementById('temperature-avg').textContent = tempStats.avg !== '--' ? `${tempStats.avg.toFixed(1)}°C` : '--';
 
-        // Temperature analytics
-        if (temperatures.length > 0) {
-            const tempMin = Math.min(...temperatures);
-            const tempMax = Math.max(...temperatures);
-            const tempAvg = temperatures.reduce((a, b) => a + b, 0) / temperatures.length;
-
-            document.getElementById('temperature-min').textContent = `${tempMin.toFixed(1)}°C`;
-            document.getElementById('temperature-max').textContent = `${tempMax.toFixed(1)}°C`;
-            document.getElementById('temperature-avg').textContent = `${tempAvg.toFixed(1)}°C`;
-        } else {
-            document.getElementById('temperature-min').textContent = '--';
-            document.getElementById('temperature-max').textContent = '--';
-            document.getElementById('temperature-avg').textContent = '--';
-        }
-
-        // Rain analytics
-        if (rains.length > 0) {
-            const rainMin = Math.min(...rains);
-            const rainMax = Math.max(...rains);
-            const rainAvg = rains.reduce((a, b) => a + b, 0) / rains.length;
-
-            document.getElementById('rain-min').textContent = `${rainMin}%`;
-            document.getElementById('rain-max').textContent = `${rainMax}%`;
-            document.getElementById('rain-avg').textContent = `${rainAvg.toFixed(1)}%`;
-        } else {
-            document.getElementById('rain-min').textContent = '--';
-            document.getElementById('rain-max').textContent = '--';
-            document.getElementById('rain-avg').textContent = '--';
-        }
+        const rainStats = calculateStats(rains);
+        document.getElementById('rain-min').textContent = rainStats.min !== '--' ? `${rainStats.min}%` : '--';
+        document.getElementById('rain-max').textContent = rainStats.max !== '--' ? `${rainStats.max}%` : '--';
+        document.getElementById('rain-avg').textContent = rainStats.avg !== '--' ? `${rainStats.avg.toFixed(1)}%` : '--';
 
         // General analytics
         document.getElementById('total-data-points').textContent = data.length;
@@ -388,14 +386,12 @@ class IoTHistory {
         document.getElementById('device-count').textContent = uniqueDevices.length;
 
         // Data period
-        if (data.length > 1) {
-            const firstDate = new Date(data[0].timestamp);
-            const lastDate = new Date(data[data.length - 1].timestamp);
+        if (data.length > 0) {
+            const sortedByTime = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const firstDate = new Date(sortedByTime[0].timestamp);
+            const lastDate = new Date(sortedByTime[sortedByTime.length - 1].timestamp);
             const period = `${firstDate.toLocaleDateString('id-ID')} - ${lastDate.toLocaleDateString('id-ID')}`;
             document.getElementById('data-period').textContent = period;
-        } else if (data.length === 1) {
-            const date = new Date(data[0].timestamp);
-            document.getElementById('data-period').textContent = date.toLocaleDateString('id-ID');
         } else {
             document.getElementById('data-period').textContent = '--';
         }
@@ -423,12 +419,13 @@ class IoTHistory {
     }
 
     shouldShowDataset(index, sensorType) {
+        // Dataset indices: 0=Distance, 1=Moisture, 2=Temperature, 3=Rain
         switch (sensorType) {
             case 'distance': return index === 0;
             case 'moisture': return index === 1;
             case 'temperature': return index === 2;
             case 'rain': return index === 3;
-            default: return true;
+            default: return true; // 'all' or unknown type
         }
     }
 
@@ -446,7 +443,7 @@ class IoTHistory {
         if (pagination.current_page > 1) {
             paginationHtml += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="history.loadHistoryData(${pagination.current_page - 1})">
+                    <a class="page-link" href="#" onclick="window.history.loadHistoryData(${pagination.current_page - 1})">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 </li>
@@ -460,7 +457,7 @@ class IoTHistory {
         if (startPage > 1) {
             paginationHtml += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="history.loadHistoryData(1)">1</a>
+                    <a class="page-link" href="#" onclick="window.history.loadHistoryData(1)">1</a>
                 </li>
             `;
             if (startPage > 2) {
@@ -472,7 +469,7 @@ class IoTHistory {
             const activeClass = i === pagination.current_page ? 'active' : '';
             paginationHtml += `
                 <li class="page-item ${activeClass}">
-                    <a class="page-link" href="#" onclick="history.loadHistoryData(${i})">${i}</a>
+                    <a class="page-link" href="#" onclick="window.history.loadHistoryData(${i})">${i}</a>
                 </li>
             `;
         }
@@ -483,7 +480,7 @@ class IoTHistory {
             }
             paginationHtml += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="history.loadHistoryData(${pagination.total_pages})">
+                    <a class="page-link" href="#" onclick="window.history.loadHistoryData(${pagination.total_pages})">
                         ${pagination.total_pages}
                     </a>
                 </li>
@@ -494,7 +491,7 @@ class IoTHistory {
         if (pagination.current_page < pagination.total_pages) {
             paginationHtml += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="history.loadHistoryData(${pagination.current_page + 1})">
+                    <a class="page-link" href="#" onclick="window.history.loadHistoryData(${pagination.current_page + 1})">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 </li>
@@ -507,18 +504,18 @@ class IoTHistory {
     getOverallStatus(row) {
         const alerts = [];
         
-        // Check each sensor for alerts
-        if (row.distance !== null && row.distance < 20) alerts.push('water-high');
-        if (row.soil_moisture < 30) alerts.push('dry-soil');
-        if (row.temperature !== null && row.temperature > 35) alerts.push('hot');
-        if (row.rain_percentage > 50) alerts.push('rain');
+        // Check each sensor for alerts based on common thresholds
+        if (row.distance !== null && row.distance < 20) alerts.push('water-high'); // Example: water too high
+        if (row.soil_moisture !== null && row.soil_moisture < 30) alerts.push('dry-soil'); // Example: soil too dry
+        if (row.temperature !== null && row.temperature > 35) alerts.push('hot'); // Example: temp too high
+        if (row.rain_percentage !== null && row.rain_percentage > 50) alerts.push('rain'); // Example: raining heavily
 
         if (alerts.length === 0) {
             return { class: 'bg-success', text: 'Normal' };
         } else if (alerts.some(alert => ['water-high', 'hot'].includes(alert))) {
             return { class: 'bg-danger', text: 'Critical' };
         } else {
-            return { class: 'bg-warning', text: 'Warning' };
+            return { class: 'bg-warning text-dark', text: 'Warning' };
         }
     }
 
@@ -527,7 +524,9 @@ class IoTHistory {
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="text-center">
-                    <div class="loading me-2"></div> Loading data...
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div> Loading data...
                 </td>
             </tr>
         `;
@@ -547,6 +546,9 @@ class IoTHistory {
     setupEventListeners() {
         // Make loadHistoryData available globally for pagination
         window.history = this;
+
+        // Attach event listener to filter button
+        document.querySelector('.btn-primary[onclick="applyFilter()"]').addEventListener('click', () => this.loadHistoryData(1));
     }
 }
 
@@ -559,7 +561,7 @@ function applyFilter() {
 
 function exportData() {
     const filterType = document.getElementById('filter-type').value;
-    const sensorType = document.getElementById('sensor-type').value;
+    const sensorType = document.getElementById('sensor-type').value; // Not directly used in export, but kept for consistency
     const deviceId = document.getElementById('device-select-history').value;
     
     const params = new URLSearchParams({
@@ -607,21 +609,21 @@ function updateDateTimeInputs() {
     if (filterType === 'range') {
         startDateContainer.classList.remove('d-none');
         endDateContainer.classList.remove('d-none');
-        document.querySelector('label[for="start-date"]').textContent = 'Tanggal Mulai';
-        document.querySelector('label[for="end-date"]').textContent = 'Tanggal Akhir';
+        document.querySelector('#start-date-container label').textContent = 'Tanggal Mulai';
+        document.querySelector('#end-date-container label').textContent = 'Tanggal Akhir';
     } else if (filterType === 'day') {
         startDateContainer.classList.remove('d-none');
-        document.querySelector('label[for="start-date"]').textContent = 'Pilih Tanggal';
+        document.querySelector('#start-date-container label').textContent = 'Pilih Tanggal';
     } else if (filterType === 'hour') {
         datetimeContainer.classList.remove('d-none');
-        document.querySelector('label[for="datetime-input"]').textContent = 'Pilih Jam (Data per Jam)';
+        document.querySelector('#datetime-container label').textContent = 'Pilih Jam (Data per Jam)';
     } else if (filterType === 'minute') {
         datetimeContainer.classList.remove('d-none');
-        document.querySelector('label[for="datetime-input"]').textContent = 'Pilih Waktu (Data per Menit)';
+        document.querySelector('#datetime-container label').textContent = 'Pilih Waktu (Data per Menit)';
     }
 }
 
 // Initialize history when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new IoTHistory();
+    window.iotHistory = new IoTHistory();
 });

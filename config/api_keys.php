@@ -1,4 +1,3 @@
-
 <?php
 /**
  * API Keys Management for IoT Device Authentication
@@ -9,6 +8,7 @@ function loadApiKeys() {
     $keysFile = __DIR__ . '/keys.json';
     if (!file_exists($keysFile)) {
         // Create default keys file if it doesn't exist
+        // This default key is for initial testing, it should be removed or replaced in production
         $defaultKeys = [
             "1f11fa20102377bc01ea17d87311604be3cdf56083139026472af0db6f6db6a0" => [
                 "device_id" => "DEVICE_TEST",
@@ -35,38 +35,43 @@ function saveApiKeys($keys) {
 function verifyApiKey($providedKey, $deviceId = null) {
     $keys = loadApiKeys();
     
-    // Debug logging
-    error_log("Verifying API key: $providedKey for device: $deviceId");
-    error_log("Available keys: " . json_encode(array_keys($keys)));
+    // Debug logging (uncomment for troubleshooting)
+    // error_log("Verifying API key: $providedKey for device: $deviceId");
+    // error_log("Available keys: " . json_encode(array_keys($keys)));
     
     if (!isset($keys[$providedKey])) {
-        error_log("API key not found in keys array");
+        // error_log("API key not found in keys array");
         return false;
     }
     
     $keyData = $keys[$providedKey];
-    error_log("Key data: " . json_encode($keyData));
+    // error_log("Key data: " . json_encode($keyData));
     
     // Check if key is active
-    if (!$keyData['active']) {
-        error_log("API key is not active");
+    if (!isset($keyData['active']) || !$keyData['active']) {
+        // error_log("API key is not active");
         return false;
     }
     
     // If device_id is provided, verify it matches
-    if ($deviceId !== null && $keyData['device_id'] !== $deviceId) {
-        error_log("Device ID mismatch. Expected: " . $keyData['device_id'] . ", Got: $deviceId");
+    if ($deviceId !== null && (!isset($keyData['device_id']) || $keyData['device_id'] !== $deviceId)) {
+        // error_log("Device ID mismatch. Expected: " . ($keyData['device_id'] ?? 'N/A') . ", Got: $deviceId");
         return false;
     }
     
-    error_log("API key verification successful");
+    // error_log("API key verification successful");
     return true;
 }
 
 // Generate new API key for device
 function generateApiKey($deviceId, $deviceName) {
     $keys = loadApiKeys();
-    $newKey = bin2hex(random_bytes(32));
+    $newKey = bin2hex(random_bytes(32)); // Generate a 64-character hex string
+
+    // Ensure the generated key is unique
+    while (isset($keys[$newKey])) {
+        $newKey = bin2hex(random_bytes(32));
+    }
     
     $keys[$newKey] = [
         "device_id" => $deviceId,
@@ -79,7 +84,35 @@ function generateApiKey($deviceId, $deviceName) {
     return $newKey;
 }
 
-// Revoke API key
+// Remove API key by the key itself
+function removeApiKey($apiKey) {
+    $keys = loadApiKeys();
+    if (isset($keys[$apiKey])) {
+        unset($keys[$apiKey]);
+        saveApiKeys($keys);
+        return true;
+    }
+    return false;
+}
+
+// Remove API key by device_id (useful when deleting a device)
+function removeApiKeyByDeviceId($deviceId) {
+    $keys = loadApiKeys();
+    $found = false;
+    foreach ($keys as $apiKey => $data) {
+        if (isset($data['device_id']) && $data['device_id'] === $deviceId) {
+            unset($keys[$apiKey]);
+            $found = true;
+            break; // Assuming one API key per device_id
+        }
+    }
+    if ($found) {
+        saveApiKeys($keys);
+    }
+    return $found;
+}
+
+// Revoke API key (set active to false)
 function revokeApiKey($apiKey) {
     $keys = loadApiKeys();
     if (isset($keys[$apiKey])) {

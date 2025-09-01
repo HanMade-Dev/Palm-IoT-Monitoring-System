@@ -1,4 +1,3 @@
-
 <?php
 require_once 'config.php';
 
@@ -71,7 +70,7 @@ try {
         throw new Exception('No fields to update');
     }
 
-    $updateFields[] = "updated_at = " . (DB_TYPE === 'pgsql' ? 'NOW()' : 'NOW()');
+    $updateFields[] = "updated_at = NOW()"; // Always update updated_at
     $updateValues[] = $deviceId;
 
     $updateSql = "UPDATE devices SET " . implode(', ', $updateFields) . " WHERE device_id = ?";

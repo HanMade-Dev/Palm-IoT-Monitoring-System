@@ -1,4 +1,3 @@
-
 <?php
 require_once 'config.php';
 
@@ -23,20 +22,18 @@ try {
     try {
         $pdo = getDBConnection();
         
+        // Select latest sensor data for each device
         $sql = "SELECT 
             sd.device_id,
             d.device_name,
             d.location,
             sd.distance,
-            sd.distance_status,
             sd.soil_moisture,
-            sd.moisture_status,
             sd.temperature,
-            sd.temperature_status,
             sd.rain_percentage,
-            sd.rain_status,
             sd.timestamp,
             ds.is_online,
+            ds.last_seen,
             ds.wifi_signal,
             ds.free_heap,
             ds.firmware_version
@@ -60,22 +57,25 @@ try {
                 'device_name' => $data['device_name'] ?? 'Unknown Device',
                 'location' => $data['location'] ?? 'Unknown Location',
                 'distance' => $data['distance'],
-                'distance_status' => $data['distance_status'] ?? getDistanceStatus($data['distance']),
+                'distance_status' => getDistanceStatus($data['distance']),
                 'soil_moisture' => $data['soil_moisture'],
-                'moisture_status' => $data['moisture_status'] ?? 'Unknown',
+                'moisture_status' => getMoistureStatus($data['soil_moisture']),
                 'temperature' => $data['temperature'],
-                'temperature_status' => $data['temperature_status'] ?? getTemperatureStatus($data['temperature']),
+                'temperature_status' => getTemperatureStatus($data['temperature']),
                 'rain_percentage' => $data['rain_percentage'],
-                'rain_status' => $data['rain_status'] ?? 'Unknown',
+                'rain_status' => getRainStatus($data['rain_percentage']),
                 'timestamp' => $data['timestamp'],
                 'wifi_signal' => $data['wifi_signal'],
                 'free_heap' => $data['free_heap'],
                 'firmware_version' => $data['firmware_version'] ?? '1.0.0',
-                'source' => 'database'
+                'source' => 'database',
+                'is_online' => (bool)$data['is_online'],
+                'last_seen' => $data['last_seen']
             ];
         }
     } catch (Exception $e) {
         logMessage("Database error in live.php: " . $e->getMessage());
+        // Continue processing even if database read fails, buffer might still have data
     }
     
     // Step 2: Read from buffer file (real-time data) and override database data if newer
@@ -108,16 +108,18 @@ try {
                     'distance' => $data['distance'],
                     'distance_status' => getDistanceStatus($data['distance']),
                     'soil_moisture' => $data['soil_moisture'],
-                    'moisture_status' => $data['moisture_status'] ?? 'Unknown',
+                    'moisture_status' => getMoistureStatus($data['soil_moisture']),
                     'temperature' => $data['temperature'],
                     'temperature_status' => getTemperatureStatus($data['temperature']),
                     'rain_percentage' => $data['rain_percentage'],
-                    'rain_status' => $data['rain_status'] ?? 'Unknown',
+                    'rain_status' => getRainStatus($data['rain_percentage']),
                     'timestamp' => $data['timestamp'],
                     'wifi_signal' => $data['wifi_signal'] ?? null,
                     'free_heap' => $data['free_heap'] ?? null,
                     'firmware_version' => $data['firmware_version'] ?? '1.0.0',
-                    'source' => 'buffer'
+                    'source' => 'buffer',
+                    'is_online' => true, // Assume online if data is coming from buffer
+                    'last_seen' => $data['timestamp'] // Use buffer timestamp as last seen
                 ];
             }
         }
@@ -136,19 +138,5 @@ try {
     logMessage("Error getting live data: " . $e->getMessage());
     http_response_code(500);
     sendResponse(false, [], 'Failed to retrieve live data: ' . $e->getMessage());
-}
-
-function getDistanceStatus($distance) {
-    if ($distance === null || $distance < 0) return 'No Data';
-    if ($distance < 20) return 'Tinggi';
-    if ($distance < 50) return 'Sedang';
-    return 'Rendah';
-}
-
-function getTemperatureStatus($temperature) {
-    if ($temperature === null) return 'No Data';
-    if ($temperature < 20) return 'Dingin';
-    if ($temperature < 30) return 'Normal';
-    return 'Panas';
 }
 ?>

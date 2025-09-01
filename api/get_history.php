@@ -1,4 +1,3 @@
-
 <?php
 require_once 'config.php';
 
@@ -11,28 +10,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
+    // Ensure buffer is flushed before querying database for comprehensive history
+    ensureBufferDir();
+    autoFlushBuffer(); // This will flush if conditions are met
+
     $page = max(1, (int)($_GET['page'] ?? 1));
     $limit = max(1, min(1000, (int)($_GET['limit'] ?? 50)));
-    $offset = ($page - 1) * $limit;
     
     $deviceId = $_GET['device_id'] ?? null;
-    $sensorType = $_GET['sensor_type'] ?? 'all';
+    $sensorType = $_GET['sensor_type'] ?? 'all'; // Not directly used for filtering data, but for chart/table display
     $filterType = $_GET['filter_type'] ?? 'range';
     $startDate = $_GET['start_date'] ?? null;
     $endDate = $_GET['end_date'] ?? null;
     $targetDate = $_GET['target_date'] ?? null;
     $targetDatetime = $_GET['target_datetime'] ?? null;
-    $timeGranularity = $_GET['time_granularity'] ?? 'hour';
+    $timeGranularity = $_GET['time_granularity'] ?? 'hour'; // Not directly used for filtering, but for display context
     
     // Export functionality
     if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-        exportToCsv($deviceId, $sensorType, $filterType, $startDate, $endDate, $targetDate, $targetDatetime, $timeGranularity);
+        exportToCsv($deviceId, $filterType, $startDate, $endDate, $targetDate, $targetDatetime);
         exit;
     }
     
-    ensureBufferDir();
-    
-    // Build WHERE conditions
+    // Build WHERE conditions for database query and buffer filtering
     $whereConditions = ["d.is_active = TRUE"];
     $params = [];
     
@@ -41,26 +41,33 @@ try {
         $params[] = $deviceId;
     }
     
-    // Date filtering
+    // Date filtering logic
+    $dbStartDate = null;
+    $dbEndDate = null;
+
     if ($filterType === 'range' && $startDate && $endDate) {
-        $whereConditions[] = "DATE(sd.timestamp) BETWEEN ? AND ?";
-        $params[] = $startDate;
-        $params[] = $endDate;
+        $dbStartDate = $startDate . ' 00:00:00';
+        $dbEndDate = $endDate . ' 23:59:59';
+        $whereConditions[] = "sd.timestamp BETWEEN ? AND ?";
+        $params[] = $dbStartDate;
+        $params[] = $dbEndDate;
     } elseif ($filterType === 'day' && $targetDate) {
+        $dbStartDate = $targetDate . ' 00:00:00';
+        $dbEndDate = $targetDate . ' 23:59:59';
         $whereConditions[] = "DATE(sd.timestamp) = ?";
         $params[] = $targetDate;
     } elseif (($filterType === 'hour' || $filterType === 'minute') && $targetDatetime) {
         $datetime = new DateTime($targetDatetime);
         if ($filterType === 'hour') {
-            $startTime = $datetime->format('Y-m-d H:00:00');
-            $endTime = $datetime->format('Y-m-d H:59:59');
+            $dbStartDate = $datetime->format('Y-m-d H:00:00');
+            $dbEndDate = $datetime->format('Y-m-d H:59:59');
         } else { // minute
-            $startTime = $datetime->format('Y-m-d H:i:00');
-            $endTime = $datetime->format('Y-m-d H:i:59');
+            $dbStartDate = $datetime->format('Y-m-d H:i:00');
+            $dbEndDate = $datetime->format('Y-m-d H:i:59');
         }
         $whereConditions[] = "sd.timestamp BETWEEN ? AND ?";
-        $params[] = $startTime;
-        $params[] = $endTime;
+        $params[] = $dbStartDate;
+        $params[] = $dbEndDate;
     }
     
     $whereClause = implode(" AND ", $whereConditions);
@@ -68,38 +75,22 @@ try {
     // Get data from database
     $pdo = getDBConnection();
     
-    // Count total records
-    $countSql = "SELECT COUNT(*) as total 
-                 FROM sensor_data sd 
-                 JOIN devices d ON sd.device_id = d.device_id 
-                 WHERE $whereClause";
-    $countStmt = $pdo->prepare($countSql);
-    $countStmt->execute($params);
-    $totalRecords = $countStmt->fetch()['total'];
-    
-    // Get paginated data
     $sql = "SELECT 
             sd.device_id,
             d.device_name,
             d.location,
             sd.distance,
-            sd.distance_status,
             sd.soil_moisture,
-            sd.moisture_status,
             sd.temperature,
-            sd.temperature_status,
             sd.rain_percentage,
-            sd.rain_status,
             sd.timestamp
         FROM sensor_data sd
         JOIN devices d ON sd.device_id = d.device_id
         WHERE $whereClause
-        ORDER BY sd.timestamp DESC
-        LIMIT ? OFFSET ?";
+        ORDER BY sd.timestamp DESC"; // Order by timestamp for correct merging
     
-    $allParams = array_merge($params, [$limit, $offset]);
     $stmt = $pdo->prepare($sql);
-    $stmt->execute($allParams);
+    $stmt->execute($params);
     $dbData = $stmt->fetchAll();
     
     // Get buffer data that matches the filters
@@ -120,24 +111,10 @@ try {
             $dataTimestamp = strtotime($data['timestamp']);
             $skip = false;
             
-            if ($filterType === 'range' && $startDate && $endDate) {
-                $start = strtotime($startDate);
-                $end = strtotime($endDate . ' 23:59:59');
+            if ($dbStartDate && $dbEndDate) {
+                $start = strtotime($dbStartDate);
+                $end = strtotime($dbEndDate);
                 if ($dataTimestamp < $start || $dataTimestamp > $end) $skip = true;
-            } elseif ($filterType === 'day' && $targetDate) {
-                $target = strtotime($targetDate);
-                $targetEnd = strtotime($targetDate . ' 23:59:59');
-                if ($dataTimestamp < $target || $dataTimestamp > $targetEnd) $skip = true;
-            } elseif (($filterType === 'hour' || $filterType === 'minute') && $targetDatetime) {
-                $datetime = new DateTime($targetDatetime);
-                if ($filterType === 'hour') {
-                    $startTime = strtotime($datetime->format('Y-m-d H:00:00'));
-                    $endTime = strtotime($datetime->format('Y-m-d H:59:59'));
-                } else {
-                    $startTime = strtotime($datetime->format('Y-m-d H:i:00'));
-                    $endTime = strtotime($datetime->format('Y-m-d H:i:59'));
-                }
-                if ($dataTimestamp < $startTime || $dataTimestamp > $endTime) $skip = true;
             }
             
             if (!$skip) {
@@ -146,13 +123,9 @@ try {
                     'device_name' => $data['device_name'] ?? 'Unknown Device',
                     'location' => $data['device_location'] ?? 'Unknown Location',
                     'distance' => $data['distance'],
-                    'distance_status' => getDistanceStatus($data['distance']),
                     'soil_moisture' => $data['soil_moisture'],
-                    'moisture_status' => $data['moisture_status'] ?? 'Unknown',
                     'temperature' => $data['temperature'],
-                    'temperature_status' => getTemperatureStatus($data['temperature']),
                     'rain_percentage' => $data['rain_percentage'],
-                    'rain_status' => $data['rain_status'] ?? 'Unknown',
                     'timestamp' => $data['timestamp'],
                     'source' => 'buffer'
                 ];
@@ -168,8 +141,11 @@ try {
         return strtotime($b['timestamp']) - strtotime($a['timestamp']);
     });
     
-    // Apply pagination to combined data
+    // Calculate total records for pagination before slicing
     $totalCombined = count($combinedData);
+
+    // Apply pagination to combined data
+    $offset = ($page - 1) * $limit;
     $paginatedData = array_slice($combinedData, $offset, $limit);
     
     // Calculate pagination info
@@ -184,7 +160,7 @@ try {
         'has_prev' => $page > 1
     ];
     
-    sendResponse(true, $paginatedData, 'History data retrieved successfully', null, $pagination);
+    sendResponse(true, $paginatedData, 'History data retrieved successfully', $pagination);
     
 } catch (Exception $e) {
     logMessage("Error getting history data: " . $e->getMessage());
@@ -192,55 +168,123 @@ try {
     sendResponse(false, [], 'Failed to retrieve history data: ' . $e->getMessage());
 }
 
-function sendResponse($success, $data = null, $message = null, $chartData = null, $pagination = null) {
-    header('Content-Type: application/json');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
-
-    $response = [
-        'success' => $success,
-        'data' => $data,
-        'message' => $message,
-        'timestamp' => date('Y-m-d H:i:s')
-    ];
+function exportToCsv($deviceId, $filterType, $startDate, $endDate, $targetDate, $targetDatetime) {
+    // Re-fetch data without pagination for export
+    // This logic is similar to the main get_history, but without LIMIT/OFFSET
     
-    if ($pagination) {
-        $response['pagination'] = $pagination;
+    $whereConditions = ["d.is_active = TRUE"];
+    $params = [];
+    
+    if ($deviceId && $deviceId !== 'all') {
+        $whereConditions[] = "sd.device_id = ?";
+        $params[] = $deviceId;
     }
     
-    if ($chartData) {
-        $response['chart_data'] = $chartData;
+    $dbStartDate = null;
+    $dbEndDate = null;
+
+    if ($filterType === 'range' && $startDate && $endDate) {
+        $dbStartDate = $startDate . ' 00:00:00';
+        $dbEndDate = $endDate . ' 23:59:59';
+        $whereConditions[] = "sd.timestamp BETWEEN ? AND ?";
+        $params[] = $dbStartDate;
+        $params[] = $dbEndDate;
+    } elseif ($filterType === 'day' && $targetDate) {
+        $dbStartDate = $targetDate . ' 00:00:00';
+        $dbEndDate = $targetDate . ' 23:59:59';
+        $whereConditions[] = "DATE(sd.timestamp) = ?";
+        $params[] = $targetDate;
+    } elseif (($filterType === 'hour' || $filterType === 'minute') && $targetDatetime) {
+        $datetime = new DateTime($targetDatetime);
+        if ($filterType === 'hour') {
+            $dbStartDate = $datetime->format('Y-m-d H:00:00');
+            $dbEndDate = $datetime->format('Y-m-d H:59:59');
+        } else { // minute
+            $dbStartDate = $datetime->format('Y-m-d H:i:00');
+            $dbEndDate = $datetime->format('Y-m-d H:i:59');
+        }
+        $whereConditions[] = "sd.timestamp BETWEEN ? AND ?";
+        $params[] = $dbStartDate;
+        $params[] = $dbEndDate;
+    }
+    
+    $whereClause = implode(" AND ", $whereConditions);
+
+    $pdo = getDBConnection();
+    $sql = "SELECT 
+            sd.device_id,
+            d.device_name,
+            d.location,
+            sd.distance,
+            sd.soil_moisture,
+            sd.temperature,
+            sd.rain_percentage,
+            sd.timestamp
+        FROM sensor_data sd
+        JOIN devices d ON sd.device_id = d.device_id
+        WHERE $whereClause
+        ORDER BY sd.timestamp DESC";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $dbData = $stmt->fetchAll();
+
+    // Get buffer data that matches the filters (same logic as above)
+    $bufferData = [];
+    if (file_exists(BUFFER_FILE)) {
+        $bufferLines = file(BUFFER_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($bufferLines as $line) {
+            $data = json_decode($line, true);
+            if (!$data || !isset($data['device_id'])) continue;
+            if ($deviceId && $deviceId !== 'all' && $data['device_id'] !== $deviceId) continue;
+            
+            $dataTimestamp = strtotime($data['timestamp']);
+            $skip = false;
+            if ($dbStartDate && $dbEndDate) {
+                $start = strtotime($dbStartDate);
+                $end = strtotime($dbEndDate);
+                if ($dataTimestamp < $start || $dataTimestamp > $end) $skip = true;
+            }
+            if (!$skip) {
+                $bufferData[] = [
+                    'device_id' => $data['device_id'],
+                    'device_name' => $data['device_name'] ?? 'Unknown Device',
+                    'location' => $data['device_location'] ?? 'Unknown Location',
+                    'distance' => $data['distance'],
+                    'soil_moisture' => $data['soil_moisture'],
+                    'temperature' => $data['temperature'],
+                    'rain_percentage' => $data['rain_percentage'],
+                    'timestamp' => $data['timestamp'],
+                    'source' => 'buffer'
+                ];
+            }
+        }
     }
 
-    echo json_encode($response);
-}
+    $combinedData = array_merge($dbData, $bufferData);
+    usort($combinedData, function($a, $b) {
+        return strtotime($b['timestamp']) - strtotime($a['timestamp']);
+    });
 
-function exportToCsv($deviceId, $sensorType, $filterType, $startDate, $endDate, $targetDate, $targetDatetime, $timeGranularity) {
-    // Implementation for CSV export
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="sensor_data_' . date('Y-m-d_H-i-s') . '.csv"');
     
     $output = fopen('php://output', 'w');
     fputcsv($output, ['Device ID', 'Device Name', 'Location', 'Timestamp', 'Distance (cm)', 'Soil Moisture (%)', 'Temperature (°C)', 'Rain (%)']);
     
-    // Get data without pagination for export
-    // Similar query logic but without LIMIT/OFFSET
+    foreach ($combinedData as $row) {
+        fputcsv($output, [
+            $row['device_id'],
+            $row['device_name'],
+            $row['location'],
+            $row['timestamp'],
+            $row['distance'],
+            $row['soil_moisture'],
+            $row['temperature'],
+            $row['rain_percentage']
+        ]);
+    }
     
     fclose($output);
-}
-
-function getDistanceStatus($distance) {
-    if ($distance === null || $distance < 0) return 'No Data';
-    if ($distance < 20) return 'Tinggi';
-    if ($distance < 50) return 'Sedang';
-    return 'Rendah';
-}
-
-function getTemperatureStatus($temperature) {
-    if ($temperature === null) return 'No Data';
-    if ($temperature < 20) return 'Dingin';
-    if ($temperature < 30) return 'Normal';
-    return 'Panas';
 }
 ?>

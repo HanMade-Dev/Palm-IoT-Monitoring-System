@@ -5,18 +5,18 @@ define('DB_NAME', 'fare1399_sawit_iot_db');
 define('DB_USER', 'fare1399_adminiot');
 define('DB_PASS', 'IoTMonitoring!');
 define('DB_PORT', 3306);
-define('DB_TYPE', 'mysql');
+define('DB_TYPE', 'mysql'); // 'mysql' or 'pgsql'
 
 // Buffer configuration
 define('BUFFER_DIR', __DIR__ . '/../storage/buffer/');
 define('BUFFER_FILE', BUFFER_DIR . 'sensor_data.jsonl');
-define('BUFFER_FLUSH_INTERVAL', 300); // 5 minutes
+define('BUFFER_FLUSH_INTERVAL', 300); // 5 minutes (in seconds)
 define('BUFFER_MAX_LINES', 50); // Auto flush after 50 lines
 
 // API configuration
-define('API_KEY_LENGTH', 32);
-define('RATE_LIMIT_REQUESTS', 200);
-define('RATE_LIMIT_WINDOW', 3600);
+define('API_KEY_LENGTH', 32); // Length of generated API keys
+define('RATE_LIMIT_REQUESTS', 200); // Max requests per window
+define('RATE_LIMIT_WINDOW', 3600); // Window in seconds (1 hour)
 
 /**
  * Establishes and returns a PDO database connection.
@@ -40,25 +40,33 @@ function getDBConnection() {
         return new PDO($dsn, $user, $pass, $options);
     } catch (PDOException $e) {
         error_log("Database connection error: " . $e->getMessage());
-        throw new PDOException($e->getMessage(), (int)$e->getCode());
+        // In a production environment, you might want to show a generic error message
+        // instead of the detailed exception message to the user.
+        throw new PDOException("Database connection failed.", (int)$e->getCode());
     }
 }
 
 /**
  * Sends a JSON response.
  */
-function sendResponse($success, $data = null, $message = null) {
+function sendResponse($success, $data = null, $message = null, $pagination = null) {
     header('Content-Type: application/json');
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
 
-    echo json_encode([
+    $response = [
         'success' => $success,
         'data' => $data,
         'message' => $message,
         'timestamp' => date('Y-m-d H:i:s')
-    ]);
+    ];
+    
+    if ($pagination) {
+        $response['pagination'] = $pagination;
+    }
+
+    echo json_encode($response);
 }
 
 /**
@@ -168,27 +176,29 @@ function flushBufferToDatabase() {
         $pdo->beginTransaction();
 
         // Prepare statements
-        $deviceStmt = $pdo->prepare("INSERT IGNORE INTO devices (device_id, device_name, location) VALUES (?, ?, ?)");
+        // Using INSERT IGNORE for devices to prevent errors if device already exists
+        $deviceStmt = $pdo->prepare("INSERT IGNORE INTO devices (device_id, device_name, location, is_active, created_at, updated_at) VALUES (?, ?, ?, TRUE, NOW(), NOW())");
         $sensorStmt = $pdo->prepare("INSERT INTO sensor_data (
             device_id, distance, distance_status, soil_moisture, moisture_status, 
             temperature, temperature_status, rain_percentage, rain_status, timestamp
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $statusStmt = $pdo->prepare("INSERT INTO device_status (
-            device_id, is_online, last_seen, wifi_signal, free_heap, firmware_version
-        ) VALUES (?, TRUE, ?, ?, ?, ?)
+            device_id, is_online, last_seen, wifi_signal, free_heap, firmware_version, created_at, updated_at
+        ) VALUES (?, TRUE, ?, ?, ?, ?, NOW(), NOW())
         ON DUPLICATE KEY UPDATE
             is_online = TRUE,
             last_seen = VALUES(last_seen),
             wifi_signal = VALUES(wifi_signal),
             free_heap = VALUES(free_heap),
-            firmware_version = VALUES(firmware_version)");
+            firmware_version = VALUES(firmware_version),
+            updated_at = NOW()");
 
         $processedCount = 0;
         foreach ($lines as $line) {
             $data = json_decode($line, true);
             if (!$data || !isset($data['device_id'])) continue;
 
-            // Insert device
+            // Insert device (if not exists)
             $deviceStmt->execute([
                 $data['device_id'],
                 $data['device_name'] ?? 'Unknown Device',
@@ -197,7 +207,9 @@ function flushBufferToDatabase() {
 
             // Calculate status
             $distanceStatus = getDistanceStatus($data['distance']);
+            $moistureStatus = getMoistureStatus($data['soil_moisture']);
             $temperatureStatus = getTemperatureStatus($data['temperature']);
+            $rainStatus = getRainStatus($data['rain_percentage']);
 
             // Insert sensor data
             $sensorStmt->execute([
@@ -205,11 +217,11 @@ function flushBufferToDatabase() {
                 $data['distance'],
                 $distanceStatus,
                 $data['soil_moisture'],
-                $data['moisture_status'] ?? 'Unknown',
+                $moistureStatus,
                 $data['temperature'],
                 $temperatureStatus,
                 $data['rain_percentage'],
-                $data['rain_status'] ?? 'Unknown',
+                $rainStatus,
                 $data['timestamp']
             ]);
 
@@ -249,10 +261,24 @@ function getDistanceStatus($distance) {
     return 'Rendah';
 }
 
+function getMoistureStatus($moisture) {
+    if ($moisture === null) return 'Error';
+    if ($moisture < 30) return 'Kering';
+    if ($moisture < 70) return 'Normal';
+    return 'Basah';
+}
+
 function getTemperatureStatus($temperature) {
     if ($temperature === null) return 'Error';
     if ($temperature < 20) return 'Dingin';
     if ($temperature < 30) return 'Normal';
     return 'Panas';
+}
+
+function getRainStatus($rainPercentage) {
+    if ($rainPercentage === null) return 'Error';
+    if ($rainPercentage < 10) return 'Kering';
+    if ($rainPercentage < 50) return 'Gerimis';
+    return 'Hujan';
 }
 ?>

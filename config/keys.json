@@ -1,3 +1,8 @@
 {
-    "DEVICE_TEST": "b0ad8d4bc79e03f8795f0890b0d4aebe652a20b63256cea2c9866d32f1c7fcf0"
+    "1f11fa20102377bc01ea17d87311604be3cdf56083139026472af0db6f6db6a0": {
+        "device_id": "DEVICE_TEST",
+        "name": "Test Device",
+        "created_at": "2024-01-01 12:00:00",
+        "active": true
+    }
 }

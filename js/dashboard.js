@@ -1,34 +1,31 @@
-
 class IoTDashboard {
     constructor() {
         this.apiBaseUrl = 'api/';
-        this.updateInterval = 3000;
-        this.charts = {};
+        this.updateInterval = 3000; // Update every 3 seconds
+        this.charts = {}; // Main modal chart
+        this.deviceCharts = {}; // Mini charts for each device card
         this.alertThresholds = {
-            distance: { min: 10, max: 100 },
+            distance: { min: 10, max: 100 }, // Example thresholds
             moisture: { min: 30, max: 80 },
             temperature: { min: 20, max: 35 },
             rain: { max: 50 }
         };
 
-        this.serialPort = null;
+        this.serialPort = null; // For single serial connection (deprecated in favor of multiple)
         this.serialReader = null;
-        this.serialConnected = false;
-        this.usingSerial = false;
-        this.currentSerialDevice = null;
-        this.connectedSerialPorts = [];
+        this.serialConnected = false; // Overall serial connection status
+        this.connectedSerialPorts = []; // Array to hold multiple serial port connections
 
-        this.devices = [];
-        this.deviceData = {};
-        this.deviceCharts = {};
-        this.currentModalDeviceId = null;
+        this.devices = []; // Devices from database
+        this.deviceData = {}; // Latest sensor data for each device (from API or serial)
+        this.currentModalDeviceId = null; // Device ID currently shown in detail modal
 
         this.init();
     }
 
     init() {
-        this.loadDevices();
-        this.startRealTimeUpdates();
+        this.loadDevices(); // Load devices from DB first
+        this.startRealTimeUpdates(); // Start fetching data from API
         this.setupEventListeners();
         this.setupModalChart();
     }
@@ -86,8 +83,10 @@ class IoTDashboard {
                         position: 'left',
                         title: {
                             display: true,
-                            text: 'Kelembaban (%)'
-                        }
+                            text: 'Kelembaban (%) / Jarak (cm)'
+                        },
+                        min: 0,
+                        max: 100 // Assuming moisture and distance are often in this range
                     },
                     y1: {
                         type: 'linear',
@@ -95,17 +94,39 @@ class IoTDashboard {
                         position: 'right',
                         title: {
                             display: true,
-                            text: 'Suhu (°C)'
+                            text: 'Suhu (°C) / Hujan (%)'
                         },
                         grid: {
                             drawOnChartArea: false,
                         },
+                        min: 0,
+                        max: 100 // Assuming temperature and rain can be scaled to this range for combined axis
                     }
                 },
                 plugins: {
                     legend: {
                         display: true,
                         position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    if (label.includes('Kelembaban') || label.includes('Hujan')) {
+                                        label += context.parsed.y + '%';
+                                    } else if (label.includes('Suhu')) {
+                                        label += context.parsed.y + '°C';
+                                    } else if (label.includes('Jarak')) {
+                                        label += context.parsed.y + ' cm';
+                                    }
+                                }
+                                return label;
+                            }
+                        }
                     }
                 }
             }
@@ -119,23 +140,27 @@ class IoTDashboard {
 
             if (data.success) {
                 this.devices = data.data;
-                this.createDeviceCards();
+                this.createDeviceCards(); // Re-render cards after loading devices
+            } else {
+                console.error('Failed to load devices:', data.message);
+                this.showErrorInDeviceContainer('Failed to load devices: ' + data.message);
             }
         } catch (error) {
             console.error('Error loading devices:', error);
+            this.showErrorInDeviceContainer('Error loading devices. Please check server connection.');
         }
     }
 
     createDeviceCards() {
         const container = document.getElementById('devices-container');
         
+        // Combine devices from DB and currently connected serial ports
         let allDevices = [...this.devices];
-        
         this.connectedSerialPorts.forEach(portInfo => {
-            if (portInfo.deviceInfo) {
+            if (portInfo.deviceInfo && !allDevices.some(d => d.device_id === portInfo.deviceInfo.device_id)) {
                 allDevices.push({
                     ...portInfo.deviceInfo,
-                    connectionType: 'serial'
+                    connectionType: 'serial' // Mark as serial connection
                 });
             }
         });
@@ -154,36 +179,32 @@ class IoTDashboard {
         }
 
         let cardsHtml = '';
-
-        this.devices.forEach(device => {
-            cardsHtml += this.createDeviceCardHtml(device, 'api');
-        });
-
-        this.connectedSerialPorts.forEach(portInfo => {
-            if (portInfo.deviceInfo) {
-                cardsHtml += this.createDeviceCardHtml(portInfo.deviceInfo, 'serial');
-            }
+        allDevices.forEach(device => {
+            cardsHtml += this.createDeviceCardHtml(device);
         });
 
         container.innerHTML = cardsHtml;
         
+        // Initialize mini charts after cards are rendered
         setTimeout(() => {
             allDevices.forEach(device => {
                 const deviceId = device.device_id;
                 const canvasElement = document.getElementById(`mini-chart-${deviceId}`);
-                console.log(`Looking for canvas mini-chart-${deviceId}:`, canvasElement);
-                
                 if (canvasElement) {
                     this.createMiniChart(deviceId);
                 }
             });
-        }, 300);
+        }, 100); // Small delay to ensure DOM is ready
     }
 
-    createDeviceCardHtml(device, connectionType) {
+    createDeviceCardHtml(device) {
         const deviceId = device.device_id;
-        const data = this.deviceData[deviceId] || {};
+        const data = this.deviceData[deviceId] || {}; // Get latest data for this device
+        const connectionType = device.connectionType || 'api'; // Default to API if not specified (from DB)
         
+        const statusBadgeClass = connectionType === 'serial' ? 'bg-info' : this.getDeviceStatusBadgeClass(data);
+        const statusText = connectionType === 'serial' ? 'Serial' : this.getDeviceStatusText(data);
+
         return `
             <div class="col-lg-4 col-md-6">
                 <div class="device-card" onclick="window.iotDashboard.showDeviceDetail('${deviceId}')">
@@ -196,8 +217,8 @@ class IoTDashboard {
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted">ID: ${deviceId}</small>
-                            <span class="badge ${connectionType === 'serial' ? 'bg-info' : 'bg-success'}" id="status-${deviceId}">
-                                ${connectionType === 'serial' ? 'Serial' : 'Online'}
+                            <span class="badge ${statusBadgeClass}" id="status-${deviceId}">
+                                ${statusText}
                             </span>
                         </div>
                     </div>
@@ -207,28 +228,28 @@ class IoTDashboard {
                             <div class="mini-sensor-icon bg-primary">
                                 <i class="fas fa-water"></i>
                             </div>
-                            <div class="mini-sensor-value" id="card-distance-${deviceId}">${data.distance || '--'} cm</div>
+                            <div class="mini-sensor-value" id="card-distance-${deviceId}">${data.distance !== undefined && data.distance !== null ? data.distance : '--'} cm</div>
                             <div class="mini-sensor-label">Jarak Air</div>
                         </div>
                         <div class="mini-sensor">
                             <div class="mini-sensor-icon bg-success">
                                 <i class="fas fa-tint"></i>
                             </div>
-                            <div class="mini-sensor-value" id="card-moisture-${deviceId}">${data.soil_moisture || '--'}%</div>
+                            <div class="mini-sensor-value" id="card-moisture-${deviceId}">${data.soil_moisture !== undefined && data.soil_moisture !== null ? data.soil_moisture : '--'}%</div>
                             <div class="mini-sensor-label">Kelembaban</div>
                         </div>
                         <div class="mini-sensor">
                             <div class="mini-sensor-icon bg-warning">
                                 <i class="fas fa-thermometer-half"></i>
                             </div>
-                            <div class="mini-sensor-value" id="card-temperature-${deviceId}">${data.temperature || '--'}°C</div>
+                            <div class="mini-sensor-value" id="card-temperature-${deviceId}">${data.temperature !== undefined && data.temperature !== null ? parseFloat(data.temperature).toFixed(1) : '--'}°C</div>
                             <div class="mini-sensor-label">Suhu</div>
                         </div>
                         <div class="mini-sensor">
                             <div class="mini-sensor-icon bg-info">
                                 <i class="fas fa-cloud-rain"></i>
                             </div>
-                            <div class="mini-sensor-value" id="card-rain-${deviceId}">${data.rain_percentage || '--'}%</div>
+                            <div class="mini-sensor-value" id="card-rain-${deviceId}">${data.rain_percentage !== undefined && data.rain_percentage !== null ? data.rain_percentage : '--'}%</div>
                             <div class="mini-sensor-label">Hujan</div>
                         </div>
                     </div>
@@ -239,7 +260,7 @@ class IoTDashboard {
                     
                     <div class="device-card-footer">
                         <small class="text-muted">
-                            Last update: <span id="last-update-${deviceId}">-</span>
+                            Last update: <span id="last-update-${deviceId}">${data.timestamp ? new Date(data.timestamp).toLocaleTimeString('id-ID') : '-'}</span>
                         </small>
                         <i class="fas fa-external-link-alt text-primary"></i>
                     </div>
@@ -249,10 +270,10 @@ class IoTDashboard {
     }
 
     async fetchLatestData() {
-        if (this.usingSerial && this.connectedSerialPorts.length > 0 && this.devices.length === 0) {
-            this.updateConnectionStatus(true);
-            return;
-        }
+        // If any serial port is connected, we assume data is coming via serial for those devices
+        // and only fetch API data for non-serial devices.
+        // However, for simplicity, we'll let the API handle its own data and serial handle its.
+        // The `deviceData` object will be updated by both sources.
 
         try {
             const response = await fetch(`${this.apiBaseUrl}live.php`);
@@ -263,42 +284,55 @@ class IoTDashboard {
                     data.data.forEach(deviceData => {
                         this.updateDeviceData(deviceData);
                     });
-                } else if (data.data) {
+                } else if (data.data) { // Handle single device response if API changes
                     this.updateDeviceData(data.data);
                 }
-                this.updateConnectionStatus(true);
+                this.updateConnectionStatus(true); // API connection is active
                 this.checkAllDeviceAlerts();
             } else {
-                if (this.connectedSerialPorts.length === 0) {
+                console.warn('API returned no success:', data.message);
+                // If no API data, and no serial data, show no data message
+                if (Object.keys(this.deviceData).length === 0 && this.connectedSerialPorts.length === 0) {
                     this.showNoDataMessage();
                 }
-                this.updateConnectionStatus(true);
+                this.updateConnectionStatus(false); // API connection might be problematic
             }
         } catch (error) {
             console.warn('Network error fetching latest data:', error.message);
+            // If network error, and no serial data, show disconnected status
             if (this.connectedSerialPorts.length === 0) {
                 this.updateConnectionStatus(false);
             }
+            if (Object.keys(this.deviceData).length === 0 && this.connectedSerialPorts.length === 0) {
+                this.showNoDataMessage();
+            }
         }
+        this.updateLastUpdateTime(); // Update global last update time
     }
 
     updateDeviceData(data) {
         const deviceId = data.device_id;
         
+        // Ensure timestamp is a Date object or parsable string
         if (!data.timestamp) {
             data.timestamp = new Date().toISOString();
         }
         
+        // Store or update the latest data for this device
         this.deviceData[deviceId] = { ...data };
 
+        // Check if the card for this device exists, if not, re-create all cards
+        // This handles cases where a new device sends data or serial device connects
         if (!document.getElementById(`card-distance-${deviceId}`)) {
             this.createDeviceCards();
-            return;
+            // After re-creating cards, the updateDeviceCard will be called by the loop
+            return; 
         }
 
         this.updateDeviceCard(deviceId, data);
         this.updateMiniChart(deviceId, data);
 
+        // If the detail modal for this device is open, update its content
         if (this.currentModalDeviceId === deviceId) {
             this.updateModalSensorData(data);
             this.updateModalChart(deviceId);
@@ -310,114 +344,80 @@ class IoTDashboard {
             }
         }
 
+        // Update last update time on the card
         const lastUpdateElement = document.getElementById(`last-update-${deviceId}`);
         if (lastUpdateElement) {
             const timestamp = new Date(data.timestamp);
             lastUpdateElement.textContent = timestamp.toLocaleTimeString('id-ID');
         }
-
-        this.updateLastUpdateTime();
     }
 
     updateDeviceCard(deviceId, data) {
         const distanceElement = document.getElementById(`card-distance-${deviceId}`);
         if (distanceElement) {
-            distanceElement.textContent = data.distance !== null ? `${data.distance} cm` : '-- cm';
+            distanceElement.textContent = data.distance !== undefined && data.distance !== null ? `${data.distance} cm` : '-- cm';
         }
 
         const moistureElement = document.getElementById(`card-moisture-${deviceId}`);
         if (moistureElement) {
-            moistureElement.textContent = `${data.soil_moisture || '--'}%`;
+            moistureElement.textContent = data.soil_moisture !== undefined && data.soil_moisture !== null ? `${data.soil_moisture}%` : '--%';
         }
 
         const temperatureElement = document.getElementById(`card-temperature-${deviceId}`);
         if (temperatureElement) {
-            temperatureElement.textContent = data.temperature !== null ? `${parseFloat(data.temperature).toFixed(1)}°C` : '--°C';
+            temperatureElement.textContent = data.temperature !== undefined && data.temperature !== null ? `${parseFloat(data.temperature).toFixed(1)}°C` : '--°C';
         }
 
         const rainElement = document.getElementById(`card-rain-${deviceId}`);
         if (rainElement) {
-            rainElement.textContent = `${data.rain_percentage || '--'}%`;
+            rainElement.textContent = data.rain_percentage !== undefined && data.rain_percentage !== null ? `${data.rain_percentage}%` : '--%';
         }
 
         const statusElement = document.getElementById(`status-${deviceId}`);
         if (statusElement) {
-            statusElement.className = `badge ${this.getDeviceStatusBadgeClass(data)}`;
-            statusElement.textContent = this.getDeviceStatusText(data);
-        }
-    }
-
-    updateMiniChart(deviceId, data) {
-        if (!this.deviceCharts[deviceId]) {
-            this.createMiniChart(deviceId);
-            if (!this.deviceCharts[deviceId]) {
-                return;
+            // Determine if this device is connected via serial
+            const isSerial = this.connectedSerialPorts.some(p => p.deviceInfo?.device_id === deviceId);
+            if (isSerial) {
+                statusElement.className = 'badge bg-info';
+                statusElement.textContent = 'Serial';
+            } else {
+                statusElement.className = `badge ${this.getDeviceStatusBadgeClass(data)}`;
+                statusElement.textContent = this.getDeviceStatusText(data);
             }
         }
-
-        const chart = this.deviceCharts[deviceId];
-        
-        const timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
-        const currentTime = timestamp.toLocaleTimeString('id-ID', { 
-            hour: '2-digit', 
-            minute: '2-digit'
-        });
-
-        const lastLabel = chart.data.labels[chart.data.labels.length - 1];
-        if (lastLabel === currentTime) {
-            const lastIndex = chart.data.labels.length - 1;
-            chart.data.datasets[0].data[lastIndex] = data.soil_moisture || 0;
-            chart.data.datasets[1].data[lastIndex] = data.temperature || 0;
-        } else {
-            chart.data.labels.push(currentTime);
-            chart.data.datasets[0].data.push(data.soil_moisture || 0);
-            chart.data.datasets[1].data.push(data.temperature || 0);
-        }
-
-        if (chart.data.labels.length > 8) {
-            chart.data.labels.shift();
-            chart.data.datasets[0].data.shift();
-            chart.data.datasets[1].data.shift();
-        }
-
-        chart.update('none');
     }
 
     createMiniChart(deviceId) {
         const canvas = document.getElementById(`mini-chart-${deviceId}`);
         if (!canvas) {
-            console.log(`Canvas mini-chart-${deviceId} not found`);
+            // console.log(`Canvas mini-chart-${deviceId} not found`);
             return;
         }
 
+        // Destroy existing chart if it exists to prevent duplicates
         if (this.deviceCharts[deviceId]) {
             this.deviceCharts[deviceId].destroy();
         }
 
         const ctx = canvas.getContext('2d');
         
+        // Initialize with some placeholder data or last known data
         const initialLabels = [];
         const initialMoistureData = [];
         const initialTempData = [];
         
-        for (let i = 5; i >= 0; i--) {
-            const time = new Date();
-            time.setMinutes(time.getMinutes() - i);
-            initialLabels.push(time.toLocaleTimeString('id-ID', { 
-                hour: '2-digit', 
-                minute: '2-digit'
-            }));
-            
-            const currentData = this.deviceData[deviceId];
-            if (currentData && i === 0) {
-                initialMoistureData.push(currentData.soil_moisture || 0);
-                initialTempData.push(currentData.temperature || 0);
-            } else {
-                const baseMoisture = currentData?.soil_moisture || 50;
-                const baseTemp = currentData?.temperature || 25;
-                initialMoistureData.push(baseMoisture + (Math.random() - 0.5) * 10);
-                initialTempData.push(baseTemp + (Math.random() - 0.5) * 5);
-            }
+        // Populate with last few data points if available, otherwise dummy data
+        const currentData = this.deviceData[deviceId];
+        if (currentData) {
+            // For simplicity, let's just add the current data point
+            initialLabels.push(new Date(currentData.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            initialMoistureData.push(currentData.soil_moisture || 0);
+            initialTempData.push(currentData.temperature || 0);
+        } else {
+            // Fallback for devices with no data yet
+            initialLabels.push(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            initialMoistureData.push(50); // Default value
+            initialTempData.push(25); // Default value
         }
         
         this.deviceCharts[deviceId] = new Chart(ctx, {
@@ -503,7 +503,7 @@ class IoTDashboard {
                             display: false
                         },
                         ticks: {
-                            display: false
+                            display: false // Hide x-axis labels for mini chart
                         }
                     },
                     y: {
@@ -554,20 +554,62 @@ class IoTDashboard {
                 }
             }
         });
+    }
 
-        console.log(`Mini chart created for device ${deviceId}`);
+    updateMiniChart(deviceId, data) {
+        const chart = this.deviceCharts[deviceId];
+        if (!chart) {
+            // If chart doesn't exist yet, create it. This can happen if data arrives before card is fully rendered.
+            this.createMiniChart(deviceId);
+            return; // Re-call update after creation
+        }
+
+        const timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+        const currentTime = timestamp.toLocaleTimeString('id-ID', { 
+            hour: '2-digit', 
+            minute: '2-digit'
+        });
+
+        const lastLabel = chart.data.labels[chart.data.labels.length - 1];
+        
+        // If the last timestamp is the same, update the last data point
+        if (lastLabel === currentTime) {
+            const lastIndex = chart.data.labels.length - 1;
+            chart.data.datasets[0].data[lastIndex] = data.soil_moisture !== undefined && data.soil_moisture !== null ? data.soil_moisture : 0;
+            chart.data.datasets[1].data[lastIndex] = data.temperature !== undefined && data.temperature !== null ? data.temperature : 0;
+        } else {
+            // Otherwise, add a new data point
+            chart.data.labels.push(currentTime);
+            chart.data.datasets[0].data.push(data.soil_moisture !== undefined && data.soil_moisture !== null ? data.soil_moisture : 0);
+            chart.data.datasets[1].data.push(data.temperature !== undefined && data.temperature !== null ? data.temperature : 0);
+        }
+
+        // Keep only the last N data points (e.g., 8 for mini chart)
+        const maxDataPoints = 8;
+        if (chart.data.labels.length > maxDataPoints) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[1].data.shift();
+        }
+
+        chart.update('none'); // 'none' for no animation
     }
 
     showDeviceDetail(deviceId) {
+        // Find device info from either DB devices or serial connected devices
         const device = this.devices.find(d => d.device_id === deviceId) || 
                      this.connectedSerialPorts.find(p => p.deviceInfo?.device_id === deviceId)?.deviceInfo;
         
-        if (!device) return;
+        if (!device) {
+            console.error('Device not found for detail modal:', deviceId);
+            return;
+        }
 
-        const data = this.deviceData[deviceId] || {};
-        
-        this.currentModalDeviceId = deviceId;
-        
+        const data = this.deviceData[deviceId] || {}; // Get latest sensor data
+
+        this.currentModalDeviceId = deviceId; // Set current device for modal
+
+        // Populate device info in modal header
         document.getElementById('deviceDetailModalLabel').innerHTML = 
             `<i class="fas fa-microchip me-2"></i>${device.device_name || 'Device Detail'}`;
         
@@ -575,25 +617,29 @@ class IoTDashboard {
         document.getElementById('modal-device-name').textContent = device.device_name || 'Unknown';
         document.getElementById('modal-device-location').textContent = device.location || 'Unknown';
         
+        // Determine connection type for badge
         const isSerial = this.connectedSerialPorts.some(p => p.deviceInfo?.device_id === deviceId);
         const connectionBadge = document.getElementById('modal-connection-badge');
         if (isSerial) {
             connectionBadge.className = 'badge bg-info';
             connectionBadge.textContent = 'Serial Connection';
         } else {
-            connectionBadge.className = 'badge bg-success';
-            connectionBadge.textContent = 'WiFi Connection';
+            connectionBadge.className = `badge ${this.getDeviceStatusBadgeClass(data)}`;
+            connectionBadge.textContent = this.getDeviceStatusText(data);
         }
         
         document.getElementById('modal-last-seen').textContent = 
-            `Last seen: ${new Date().toLocaleString('id-ID')}`;
+            `Last seen: ${data.timestamp ? new Date(data.timestamp).toLocaleString('id-ID') : '-'}`;
 
+        // Update sensor data and chart in modal
         this.updateModalSensorData(data);
         this.updateModalChart(deviceId);
         
+        // Show the modal
         const modal = new bootstrap.Modal(document.getElementById('deviceDetailModal'));
         modal.show();
         
+        // Reset currentModalDeviceId when modal is hidden
         const modalElement = document.getElementById('deviceDetailModal');
         modalElement.addEventListener('hidden.bs.modal', () => {
             this.currentModalDeviceId = null;
@@ -601,11 +647,12 @@ class IoTDashboard {
     }
 
     updateModalSensorData(data) {
+        // Update Distance
         const distanceElement = document.getElementById('modal-distance-value');
         const distanceStatusElement = document.getElementById('modal-distance-status');
         if (data.distance !== null && data.distance !== undefined) {
             distanceElement.textContent = `${data.distance} cm`;
-            distanceStatusElement.textContent = data.distance_status || this.getDistanceStatus(data.distance);
+            distanceStatusElement.textContent = this.getDistanceStatus(data.distance);
             distanceStatusElement.className = `sensor-status ${this.getDistanceStatusClass(data.distance)}`;
         } else {
             distanceElement.textContent = '-- cm';
@@ -613,16 +660,25 @@ class IoTDashboard {
             distanceStatusElement.className = 'sensor-status text-muted';
         }
 
-        document.getElementById('modal-moisture-value').textContent = `${data.soil_moisture || '--'}%`;
-        const moistureStatus = document.getElementById('modal-moisture-status');
-        moistureStatus.textContent = data.moisture_status || 'No data';
-        moistureStatus.className = `sensor-status ${data.moisture_status ? 'status-' + data.moisture_status.toLowerCase() : 'text-muted'}`;
+        // Update Soil Moisture
+        const moistureElement = document.getElementById('modal-moisture-value');
+        const moistureStatusElement = document.getElementById('modal-moisture-status');
+        if (data.soil_moisture !== null && data.soil_moisture !== undefined) {
+            moistureElement.textContent = `${data.soil_moisture}%`;
+            moistureStatusElement.textContent = this.getMoistureStatus(data.soil_moisture);
+            moistureStatusElement.className = `sensor-status ${this.getMoistureStatusClass(data.soil_moisture)}`;
+        } else {
+            moistureElement.textContent = '--%';
+            moistureStatusElement.textContent = 'No data';
+            moistureStatusElement.className = 'sensor-status text-muted';
+        }
 
+        // Update Temperature
         const tempElement = document.getElementById('modal-temperature-value');
         const tempStatusElement = document.getElementById('modal-temperature-status');
         if (data.temperature !== null && data.temperature !== undefined) {
             tempElement.textContent = `${parseFloat(data.temperature).toFixed(1)}°C`;
-            tempStatusElement.textContent = data.temperature_status || this.getTemperatureStatus(data.temperature);
+            tempStatusElement.textContent = this.getTemperatureStatus(data.temperature);
             tempStatusElement.className = `sensor-status ${this.getTemperatureStatusClass(data.temperature)}`;
         } else {
             tempElement.textContent = '--°C';
@@ -630,35 +686,54 @@ class IoTDashboard {
             tempStatusElement.className = 'sensor-status text-muted';
         }
 
-        document.getElementById('modal-rain-value').textContent = `${data.rain_percentage || '--'}%`;
-        const rainStatus = document.getElementById('modal-rain-status');
-        rainStatus.textContent = data.rain_status || 'No data';
-        rainStatus.className = `sensor-status ${data.rain_status ? 'status-' + data.rain_status.toLowerCase() : 'text-muted'}`;
+        // Update Rain Percentage
+        const rainElement = document.getElementById('modal-rain-value');
+        const rainStatusElement = document.getElementById('modal-rain-status');
+        if (data.rain_percentage !== null && data.rain_percentage !== undefined) {
+            rainElement.textContent = `${data.rain_percentage}%`;
+            rainStatusElement.textContent = this.getRainStatus(data.rain_percentage);
+            rainStatusElement.className = `sensor-status ${this.getRainStatusClass(data.rain_percentage)}`;
+        } else {
+            rainElement.textContent = '--%';
+            rainStatusElement.textContent = 'No data';
+            rainStatusElement.className = 'sensor-status text-muted';
+        }
     }
 
     updateModalChart(deviceId) {
         const deviceChart = this.deviceCharts[deviceId];
-        if (!deviceChart) return;
+        if (!deviceChart) {
+            // If mini chart for this device doesn't exist, create a dummy one for modal
+            // or fetch historical data for the modal chart directly.
+            // For now, we'll just clear the modal chart if no mini chart data.
+            this.charts.modal.data.labels = [];
+            this.charts.modal.data.datasets.forEach(dataset => dataset.data = []);
+            this.charts.modal.update('none');
+            return;
+        }
 
         const modalChart = this.charts.modal;
         const currentData = this.deviceData[deviceId];
 
+        // Copy labels and data from mini chart
         modalChart.data.labels = [...deviceChart.data.labels];
-        modalChart.data.datasets[0].data = [...deviceChart.data.datasets[0].data];
-        modalChart.data.datasets[1].data = [...deviceChart.data.datasets[1].data];
+        modalChart.data.datasets[0].data = [...deviceChart.data.datasets[0].data]; // Moisture
+        modalChart.data.datasets[1].data = [...deviceChart.data.datasets[1].data]; // Temperature
 
-        modalChart.data.datasets[2].data = modalChart.data.labels.map((_, index) => {
+        // For distance and rain, we might not have historical data in mini chart,
+        // so we'll just show the latest value at the last point.
+        modalChart.data.datasets[2].data = modalChart.data.labels.map((label, index) => {
             if (index === modalChart.data.labels.length - 1 && currentData) {
-                return currentData.distance || 0;
+                return currentData.distance !== undefined && currentData.distance !== null ? currentData.distance : 0;
             }
-            return 0;
+            return null; // Or 0, depending on how you want to display sparse data
         });
 
-        modalChart.data.datasets[3].data = modalChart.data.labels.map((_, index) => {
+        modalChart.data.datasets[3].data = modalChart.data.labels.map((label, index) => {
             if (index === modalChart.data.labels.length - 1 && currentData) {
-                return currentData.rain_percentage || 0;
+                return currentData.rain_percentage !== undefined && currentData.rain_percentage !== null ? currentData.rain_percentage : 0;
             }
-            return 0;
+            return null;
         });
 
         modalChart.update('none');
@@ -682,24 +757,73 @@ class IoTDashboard {
         const alerts = [];
         const devicePrefix = `[${deviceName}] `;
 
+        // Distance Alert
         if (data.distance !== null && data.distance !== undefined) {
             if (data.distance < this.alertThresholds.distance.min) {
                 alerts.push({
                     type: 'danger',
                     icon: 'fas fa-exclamation-triangle',
-                    title: `${devicePrefix}Peringatan: Level Air Tinggi`,
+                    title: `${devicePrefix}Peringatan: Level Air Sangat Tinggi`,
                     message: `Jarak air hanya ${data.distance} cm. Segera periksa sistem drainase.`
+                });
+            } else if (data.distance > this.alertThresholds.distance.max) {
+                alerts.push({
+                    type: 'warning',
+                    icon: 'fas fa-exclamation-triangle',
+                    title: `${devicePrefix}Peringatan: Level Air Sangat Rendah`,
+                    message: `Jarak air ${data.distance} cm. Perlu pengisian air.`
                 });
             }
         }
 
-        if (data.soil_moisture < this.alertThresholds.moisture.min) {
-            alerts.push({
-                type: 'warning',
-                icon: 'fas fa-tint',
-                title: `${devicePrefix}Peringatan: Tanah Kering`,
-                message: `Kelembaban tanah hanya ${data.soil_moisture}%. Perlu irigasi segera.`
-            });
+        // Soil Moisture Alert
+        if (data.soil_moisture !== null && data.soil_moisture !== undefined) {
+            if (data.soil_moisture < this.alertThresholds.moisture.min) {
+                alerts.push({
+                    type: 'danger',
+                    icon: 'fas fa-tint',
+                    title: `${devicePrefix}Peringatan: Tanah Sangat Kering`,
+                    message: `Kelembaban tanah hanya ${data.soil_moisture}%. Perlu irigasi segera.`
+                });
+            } else if (data.soil_moisture > this.alertThresholds.moisture.max) {
+                alerts.push({
+                    type: 'warning',
+                    icon: 'fas fa-tint',
+                    title: `${devicePrefix}Peringatan: Tanah Terlalu Basah`,
+                    message: `Kelembaban tanah ${data.soil_moisture}%. Periksa drainase.`
+                });
+            }
+        }
+
+        // Temperature Alert
+        if (data.temperature !== null && data.temperature !== undefined) {
+            if (data.temperature > this.alertThresholds.temperature.max) {
+                alerts.push({
+                    type: 'danger',
+                    icon: 'fas fa-thermometer-half',
+                    title: `${devicePrefix}Peringatan: Suhu Udara Tinggi`,
+                    message: `Suhu udara ${data.temperature}°C. Perhatikan kondisi tanaman.`
+                });
+            } else if (data.temperature < this.alertThresholds.temperature.min) {
+                alerts.push({
+                    type: 'warning',
+                    icon: 'fas fa-thermometer-half',
+                    title: `${devicePrefix}Peringatan: Suhu Udara Rendah`,
+                    message: `Suhu udara ${data.temperature}°C. Perhatikan kondisi tanaman.`
+                });
+            }
+        }
+
+        // Rain Alert (e.g., if rain percentage is high)
+        if (data.rain_percentage !== null && data.rain_percentage !== undefined) {
+            if (data.rain_percentage > this.alertThresholds.rain.max) {
+                alerts.push({
+                    type: 'info', // Info, not necessarily warning/danger
+                    icon: 'fas fa-cloud-rain',
+                    title: `${devicePrefix}Informasi: Hujan Terdeteksi`,
+                    message: `Curah hujan ${data.rain_percentage}%.`
+                });
+            }
         }
 
         return alerts;
@@ -725,52 +849,86 @@ class IoTDashboard {
         container.innerHTML = alertsHtml;
     }
 
+    // Helper functions for status classification
     getDistanceStatus(distance) {
-        if (distance < 20) return 'Level Tinggi';
-        if (distance < 50) return 'Level Sedang';
-        return 'Level Rendah';
+        if (distance === null || distance === undefined) return 'No Data';
+        if (distance < 20) return 'Tinggi';
+        if (distance < 50) return 'Sedang';
+        return 'Rendah';
     }
 
     getDistanceStatusClass(distance) {
+        if (distance === null || distance === undefined) return 'text-muted';
         if (distance < 20) return 'text-danger';
         if (distance < 50) return 'text-warning';
         return 'text-success';
     }
 
+    getMoistureStatus(moisture) {
+        if (moisture === null || moisture === undefined) return 'No Data';
+        if (moisture < 30) return 'Kering';
+        if (moisture < 70) return 'Normal';
+        return 'Basah';
+    }
+
+    getMoistureStatusClass(moisture) {
+        if (moisture === null || moisture === undefined) return 'text-muted';
+        if (moisture < 30) return 'text-danger';
+        if (moisture < 70) return 'text-success';
+        return 'text-primary'; // For 'Basah'
+    }
+
     getTemperatureStatus(temp) {
+        if (temp === null || temp === undefined) return 'No Data';
         if (temp < 20) return 'Dingin';
         if (temp < 30) return 'Normal';
         return 'Panas';
     }
 
     getTemperatureStatusClass(temp) {
+        if (temp === null || temp === undefined) return 'text-muted';
         if (temp < 20) return 'text-info';
         if (temp < 30) return 'text-success';
         return 'text-danger';
     }
 
+    getRainStatus(rainPercentage) {
+        if (rainPercentage === null || rainPercentage === undefined) return 'No Data';
+        if (rainPercentage < 10) return 'Kering';
+        if (rainPercentage < 50) return 'Gerimis';
+        return 'Hujan';
+    }
+
+    getRainStatusClass(rainPercentage) {
+        if (rainPercentage === null || rainPercentage === undefined) return 'text-muted';
+        if (rainPercentage < 10) return 'text-success';
+        if (rainPercentage < 50) return 'text-warning';
+        return 'text-primary'; // For 'Hujan'
+    }
+
+    // Device online/offline status based on last_seen
     getDeviceStatusBadgeClass(data) {
-        if (!data || !data.timestamp) {
-            return 'bg-secondary';
+        if (!data || !data.last_seen) { // Use last_seen from device_status table
+            return 'bg-secondary'; // No data or never seen
         }
 
         const now = new Date();
-        const lastUpdate = new Date(data.timestamp);
-        const timeDiff = (now - lastUpdate) / 1000 / 60;
+        const lastSeen = new Date(data.last_seen);
+        const timeDiff = (now - lastSeen) / 1000 / 60; // Difference in minutes
 
-        if (timeDiff <= 5) return 'bg-success';
-        if (timeDiff <= 30) return 'bg-warning';
-        return 'bg-danger';
+        if (timeDiff <= 5) return 'bg-success'; // Online (last seen within 5 minutes)
+        if (timeDiff <= 30) return 'bg-warning'; // Warning (last seen within 30 minutes)
+        return 'bg-danger'; // Offline (last seen more than 30 minutes ago)
     }
 
     getDeviceStatusText(data) {
-        if (!data || !data.timestamp) {
+        if (!data || !data.last_seen) {
             return 'No Data';
         }
 
         const now = new Date();
-        const lastUpdate = new Date(data.timestamp);
-        const timeDiff = (now - lastUpdate) / 1000 / 60;
+        const lastSeen = new Date(data.last_seen);
+        const timeDiff = (now - lastSeen) / 1000 / 60;
 
         if (timeDiff <= 5) return 'Online';
         if (timeDiff <= 30) return 'Warning';
@@ -795,13 +953,18 @@ class IoTDashboard {
     }
 
     startRealTimeUpdates() {
-        this.fetchLatestData();
+        this.fetchLatestData(); // Initial fetch
+        // Clear any existing interval to prevent multiple updates
+        if (this.updateTimer) {
+            clearInterval(this.updateTimer);
+        }
         this.updateTimer = setInterval(() => {
             this.fetchLatestData();
         }, this.updateInterval);
     }
 
     setupEventListeners() {
+        // Add Device Form submission
         const addDeviceForm = document.getElementById('addDeviceForm');
         if (addDeviceForm) {
             addDeviceForm.addEventListener('submit', (e) => {
@@ -810,6 +973,7 @@ class IoTDashboard {
             });
         }
 
+        // Edit Device Form submission
         const editDeviceForm = document.getElementById('editDeviceForm');
         if (editDeviceForm) {
             editDeviceForm.addEventListener('submit', (e) => {
@@ -818,11 +982,14 @@ class IoTDashboard {
             });
         }
 
+        // Manage Device Tabs click listener to reset add device form
         const deviceManagementTabs = document.getElementById('deviceManagementTabs');
         if (deviceManagementTabs) {
             deviceManagementTabs.addEventListener('click', (e) => {
                 if (e.target.id === 'add-device-tab') {
                     this.resetAddDeviceForm();
+                } else if (e.target.id === 'device-list-tab') {
+                    this.loadDeviceManagementList(); // Reload list when switching back
                 }
             });
         }
@@ -835,24 +1002,32 @@ class IoTDashboard {
     }
 
     showManageDeviceModal() {
-        this.resetManageDeviceModal();
-        this.loadDeviceManagementList();
+        this.resetManageDeviceModal(); // Reset modal state
+        this.loadDeviceManagementList(); // Load device list
         const modal = new bootstrap.Modal(document.getElementById('manageDeviceModal'));
         modal.show();
     }
 
     resetManageDeviceModal() {
-        document.getElementById('addDeviceForm').reset();
+        // Ensure add device form is visible and success message is hidden
+        document.getElementById('addDeviceForm').classList.remove('d-none');
         document.getElementById('addDeviceSuccess').classList.add('d-none');
-        document.getElementById('device-list-tab').click();
+        document.getElementById('addDeviceForm').reset(); // Clear form fields
+        // Switch to device list tab by default
+        const deviceListTabButton = document.getElementById('device-list-tab');
+        if (deviceListTabButton) {
+            const tab = new bootstrap.Tab(deviceListTabButton);
+            tab.show();
+        }
     }
 
     async loadDeviceManagementList() {
         try {
+            const tbody = document.getElementById('deviceManagementList');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading devices...</td></tr>';
+
             const response = await fetch(`${this.apiBaseUrl}get_devices.php`);
             const result = await response.json();
-
-            const tbody = document.getElementById('deviceManagementList');
 
             if (result.success && result.data.length > 0) {
                 tbody.innerHTML = result.data.map(device => `
@@ -861,8 +1036,8 @@ class IoTDashboard {
                         <td>${device.device_name || '-'}</td>
                         <td>${device.location || '-'}</td>
                         <td>
-                            <span class="badge ${device.is_online ? 'bg-success' : 'bg-secondary'}">
-                                ${device.is_online ? 'Online' : 'Offline'}
+                            <span class="badge ${device.connection_status === 'online' ? 'bg-success' : (device.connection_status === 'warning' ? 'bg-warning text-dark' : 'bg-danger')}">
+                                ${device.connection_status.charAt(0).toUpperCase() + device.connection_status.slice(1)}
                             </span>
                         </td>
                         <td>
@@ -888,15 +1063,26 @@ class IoTDashboard {
     }
 
     async addDevice() {
+        const deviceIdInput = document.getElementById('deviceId');
+        const deviceNameInput = document.getElementById('deviceName');
+        const deviceLocationInput = document.getElementById('deviceLocation');
+        const deviceDescriptionInput = document.getElementById('deviceDescription');
+
         const deviceData = {
-            device_id: document.getElementById('deviceId').value.trim(),
-            device_name: document.getElementById('deviceName').value.trim(),
-            location: document.getElementById('deviceLocation').value.trim(),
-            description: document.getElementById('deviceDescription').value.trim()
+            device_id: deviceIdInput.value.trim(),
+            device_name: deviceNameInput.value.trim(),
+            location: deviceLocationInput.value.trim(),
+            description: deviceDescriptionInput.value.trim()
         };
 
         if (!deviceData.device_id || !deviceData.device_name) {
             this.showAlert('Device ID dan Device Name harus diisi!', 'danger');
+            return;
+        }
+
+        // Basic client-side validation for device_id pattern
+        if (!/^[A-Za-z0-9_]+$/.test(deviceData.device_id)) {
+            this.showAlert('Device ID hanya boleh mengandung huruf, angka, dan underscore.', 'danger');
             return;
         }
 
@@ -919,8 +1105,8 @@ class IoTDashboard {
                 document.getElementById('generatedEspCode').textContent = result.data.esp_code;
 
                 this.showAlert('Device berhasil ditambahkan!', 'success');
-                this.loadDeviceManagementList();
-                this.loadDevices();
+                this.loadDeviceManagementList(); // Refresh list in modal
+                this.loadDevices(); // Refresh cards on dashboard
             } else {
                 this.showAlert('Error: ' + (result.message || 'Failed to add device'), 'danger');
             }
@@ -939,13 +1125,15 @@ class IoTDashboard {
                 const device = result.data[0];
 
                 document.getElementById('editDeviceId').value = device.device_id;
-                document.getElementById('editDeviceIdDisplay').value = device.device_id;
+                document.getElementById('editDeviceIdDisplay').value = device.device_id; // Display only
                 document.getElementById('editDeviceName').value = device.device_name || '';
                 document.getElementById('editDeviceLocation').value = device.location || '';
                 document.getElementById('editDeviceDescription').value = device.description || '';
 
                 const modal = new bootstrap.Modal(document.getElementById('editDeviceModal'));
                 modal.show();
+            } else {
+                this.showAlert('Device not found for editing.', 'danger');
             }
         } catch (error) {
             console.error('Error loading device for edit:', error);
@@ -956,10 +1144,15 @@ class IoTDashboard {
     async updateDevice() {
         const deviceData = {
             device_id: document.getElementById('editDeviceId').value,
-            device_name: document.getElementById('editDeviceName').value,
-            location: document.getElementById('editDeviceLocation').value,
-            description: document.getElementById('editDeviceDescription').value
+            device_name: document.getElementById('editDeviceName').value.trim(),
+            location: document.getElementById('editDeviceLocation').value.trim(),
+            description: document.getElementById('editDeviceDescription').value.trim()
         };
+
+        if (!deviceData.device_name) {
+            this.showAlert('Device Name harus diisi!', 'danger');
+            return;
+        }
 
         try {
             const response = await fetch(`${this.apiBaseUrl}update_device.php`, {
@@ -975,8 +1168,8 @@ class IoTDashboard {
             if (result.success) {
                 this.showAlert('Device berhasil diperbarui!', 'success');
                 bootstrap.Modal.getInstance(document.getElementById('editDeviceModal')).hide();
-                this.loadDeviceManagementList();
-                this.loadDevices();
+                this.loadDeviceManagementList(); // Refresh list in modal
+                this.loadDevices(); // Refresh cards on dashboard
             } else {
                 this.showAlert('Error: ' + (result.message || 'Failed to update device'), 'danger');
             }
@@ -987,7 +1180,7 @@ class IoTDashboard {
     }
 
     confirmDeleteDevice(deviceId, deviceName) {
-        if (confirm(`Apakah Anda yakin ingin menghapus device "${deviceName}" (${deviceId})?\n\nSemua data sensor untuk device ini akan ikut terhapus!`)) {
+        if (confirm(`Apakah Anda yakin ingin menghapus device "${deviceName}" (${deviceId})?\n\nSemua data sensor untuk device ini akan ikut terhapus secara permanen!`)) {
             this.deleteDevice(deviceId);
         }
     }
@@ -1006,8 +1199,8 @@ class IoTDashboard {
 
             if (result.success) {
                 this.showAlert('Device berhasil dihapus!', 'success');
-                this.loadDeviceManagementList();
-                this.loadDevices();
+                this.loadDeviceManagementList(); // Refresh list in modal
+                this.loadDevices(); // Refresh cards on dashboard
             } else {
                 this.showAlert('Error: ' + (result.message || 'Failed to delete device'), 'danger');
             }
@@ -1048,70 +1241,38 @@ class IoTDashboard {
         ].join('');
         alertPlaceholder.append(wrapper);
 
+        // Auto-dismiss after 5 seconds
         setTimeout(() => {
             const alert = wrapper.querySelector('.alert');
             if (alert) {
-                alert.remove();
+                bootstrap.Alert.getInstance(alert)?.close(); // Use Bootstrap's close method
+                wrapper.remove(); // Remove the wrapper div after closing
             }
         }, 5000);
     }
 
     refreshData() {
-        this.loadDevices();
-        this.fetchLatestData();
+        this.loadDevices(); // Reload device list and cards
+        this.fetchLatestData(); // Fetch latest sensor data
+        this.showAlert('Data dashboard diperbarui!', 'info');
     }
 
-    async addSerialPort() {
-        console.log('addSerialPort function called');
-        
-        if (!('serial' in navigator)) {
-            console.log('Serial API not supported');
-            this.showSerialNotSupported();
-            return;
-        }
-
-        try {
-            console.log('Requesting serial port...');
-            const port = await navigator.serial.requestPort();
-            console.log('Port selected, opening...');
-            
-            await port.open({ 
-                baudRate: 115200,
-                dataBits: 8,
-                stopBits: 1,
-                parity: 'none'
-            });
-
-            console.log('Port opened successfully');
-
-            const portInfo = {
-                port: port,
-                reader: null,
-                decoder: new TextDecoderStream(),
-                id: `port_${Date.now()}`,
-                deviceInfo: null
-            };
-
-            this.connectedSerialPorts.push(portInfo);
-            this.updateSerialPortUI();
-            this.startSerialReadingForPort(portInfo);
-
-            console.log('Serial port added successfully');
-
-        } catch (error) {
-            console.error('Error in addSerialPort:', error);
-            if (error.name === 'NotFoundError') {
-                console.log('User cancelled serial port selection');
-            } else {
-                console.warn('Additional serial connection failed:', error.message);
-                this.showSerialError(error.message);
-            }
-        }
+    showErrorInDeviceContainer(message) {
+        const container = document.getElementById('devices-container');
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-danger text-center">
+                    <i class="fas fa-exclamation-circle fs-2 mb-3"></i>
+                    <h5>Error Loading Devices</h5>
+                    <p>${message}</p>
+                </div>
+            </div>
+        `;
     }
 
-    async showNoDataMessage() {
+    showNoDataMessage() {
         const container = document.getElementById('alerts-container');
-        const noDataAlert = `
+        container.innerHTML = `
             <div class="alert alert-info border-0 shadow-sm" role="alert">
                 <div class="d-flex align-items-center">
                     <div class="text-center w-100">
@@ -1122,13 +1283,52 @@ class IoTDashboard {
                 </div>
             </div>
         `;
-        container.innerHTML = noDataAlert;
+    }
+
+    // --- Serial Port Functionality ---
+    async addSerialPort() {
+        if (!('serial' in navigator)) {
+            this.showSerialNotSupported();
+            return;
+        }
+
+        try {
+            const port = await navigator.serial.requestPort();
+            await port.open({ 
+                baudRate: 115200,
+                dataBits: 8,
+                stopBits: 1,
+                parity: 'none'
+            });
+
+            const portInfo = {
+                port: port,
+                reader: null,
+                decoder: new TextDecoderStream(),
+                id: `port_${Date.now()}`, // Unique ID for this connection
+                deviceInfo: null // To store device_id, name, location from serial data
+            };
+
+            this.connectedSerialPorts.push(portInfo);
+            this.serialConnected = true; // Mark overall serial status as connected
+            this.updateConnectionStatus(true); // Update global connection status
+
+            this.startSerialReadingForPort(portInfo);
+            this.showAlert('Serial port connected. Waiting for device data...', 'info');
+
+        } catch (error) {
+            console.error('Error in addSerialPort:', error);
+            if (error.name === 'NotFoundError') {
+                // User cancelled port selection
+                console.log('User cancelled serial port selection');
+            } else {
+                this.showSerialError(error.message);
+            }
+        }
     }
 
     async startSerialReadingForPort(portInfo) {
-        if (!portInfo.port) return;
-
-        this.serialConnected = true;
+        if (!portInfo.port || !portInfo.port.readable) return;
 
         try {
             const readableStreamClosed = portInfo.port.readable.pipeTo(portInfo.decoder.writable);
@@ -1136,25 +1336,29 @@ class IoTDashboard {
 
             let buffer = '';
 
-            while (this.serialConnected && this.connectedSerialPorts.includes(portInfo)) {
+            while (portInfo.port.readable && this.connectedSerialPorts.includes(portInfo)) {
                 const { value, done } = await portInfo.reader.read();
                 if (done) break;
 
                 buffer += value;
                 const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
                 for (const line of lines) {
                     const trimmedLine = line.trim();
                     if (trimmedLine.length > 0) {
-                        console.log(`Port ${portInfo.id} received:`, trimmedLine);
+                        // console.log(`Port ${portInfo.id} received:`, trimmedLine); // Debugging serial input
                         this.parseSerialData(trimmedLine, portInfo);
                     }
                 }
             }
         } catch (error) {
-            console.error('Serial reading error for port:', error);
-            this.disconnectSpecificPort(portInfo.id);
+            console.error(`Serial reading error for port ${portInfo.id}:`, error);
+            this.disconnectSpecificPort(portInfo.id); // Disconnect on error
+        } finally {
+            if (portInfo.reader) {
+                portInfo.reader.releaseLock();
+            }
         }
     }
 
@@ -1169,157 +1373,117 @@ class IoTDashboard {
                 await portInfo.reader.cancel();
                 portInfo.reader.releaseLock();
             }
-            if (portInfo.port) {
+            if (portInfo.port && portInfo.port.opened) { // Check if port is still open
                 await portInfo.port.close();
             }
+            this.showAlert(`Serial port for ${portInfo.deviceInfo?.device_id || 'unknown device'} disconnected.`, 'info');
         } catch (error) {
             console.error('Error disconnecting specific port:', error);
-        }
-
-        this.connectedSerialPorts.splice(portIndex, 1);
-        this.updateSerialPortUI();
-        this.createDeviceCards();
-
-        if (this.connectedSerialPorts.length === 0) {
-            this.serialConnected = false;
-            this.usingSerial = false;
-            this.currentSerialDevice = null;
-            this.startRealTimeUpdates();
+            this.showAlert(`Error disconnecting serial port: ${error.message}`, 'danger');
+        } finally {
+            this.connectedSerialPorts.splice(portIndex, 1); // Remove from list
+            this.createDeviceCards(); // Re-render cards to remove disconnected serial device
+            this.updateConnectionStatus(this.connectedSerialPorts.length > 0); // Update global status
         }
     }
 
     parseSerialData(line, portInfo) {
         try {
-            if (line.includes('===') && line.includes('Sensor Readings')) {
-                const deviceIdMatch = line.match(/===\s*([A-Z0-9_]+)\s+Sensor Readings\s*===/);
-                if (deviceIdMatch) {
-                    if (!portInfo.deviceInfo) {
-                        portInfo.deviceInfo = {
-                            device_id: deviceIdMatch[1].trim(),
-                            device_name: 'Unknown Device',
-                            location: 'Unknown Location',
-                            connection_status: 'online'
-                        };
-                    } else {
-                        portInfo.deviceInfo.device_id = deviceIdMatch[1].trim();
-                    }
+            // Attempt to parse as JSON first (preferred format from ESP32)
+            if (line.startsWith('{') && line.endsWith('}')) {
+                const data = JSON.parse(line);
+                
+                // Extract device info from JSON payload
+                if (data.device_id) {
+                    portInfo.deviceInfo = {
+                        device_id: data.device_id,
+                        device_name: data.device_name || 'Serial Device',
+                        location: data.device_location || 'Serial Port',
+                        connection_status: 'online' // Always online if receiving data
+                    };
+                } else {
+                    // Fallback if device_id is missing in JSON
+                    portInfo.deviceInfo = {
+                        device_id: `SERIAL_${portInfo.id}`,
+                        device_name: 'Serial Device',
+                        location: 'Serial Port',
+                        connection_status: 'online'
+                    };
                 }
+
+                const sensorData = {
+                    device_id: portInfo.deviceInfo.device_id,
+                    device_name: portInfo.deviceInfo.device_name,
+                    device_location: portInfo.deviceInfo.location,
+                    distance: data.distance !== undefined ? data.distance : null,
+                    soil_moisture: data.soil_moisture !== undefined ? data.soil_moisture : null,
+                    temperature: data.temperature !== undefined ? data.temperature : null,
+                    rain_percentage: data.rain_percentage !== undefined ? data.rain_percentage : null,
+                    wifi_signal: data.wifi_signal !== undefined ? data.wifi_signal : null,
+                    free_heap: data.free_heap !== undefined ? data.free_heap : null,
+                    firmware_version: data.firmware_version || '1.0.0',
+                    timestamp: new Date().toISOString() // Use current time for serial data
+                };
+                this.updateDeviceData(sensorData);
                 return;
             }
 
-            if (line.includes('{') && line.includes('}')) {
-                const jsonStart = line.indexOf('{');
-                const jsonEnd = line.lastIndexOf('}') + 1;
-                const jsonStr = line.substring(jsonStart, jsonEnd);
+            // Fallback for plain text serial output (e.g., from Arduino Serial.print)
+            // This part needs to be robust to handle partial lines or varied formats
+            if (!portInfo.deviceInfo) {
+                // Try to extract device ID/Name from initial lines
+                const idMatch = line.match(/Device ID:\s*([A-Za-z0-9_]+)/);
+                const nameMatch = line.match(/Device Name:\s*(.+)/);
+                const locMatch = line.match(/Location:\s*(.+)/);
 
-                const data = JSON.parse(jsonStr);
-
-                const sensorData = {
-                    device_id: data.device_id || `SERIAL_${portInfo.id}`,
-                    device_name: data.device_name || 'Unknown Device',
-                    device_location: data.device_location || 'Unknown Location',
-                    distance: data.distance !== undefined ? data.distance : null,
-                    soil_moisture: data.soil_moisture || 0,
-                    moisture_status: data.moisture_status || 'Unknown',
-                    temperature: data.temperature !== undefined ? data.temperature : null,
-                    rain_percentage: data.rain_percentage || 0,
-                    rain_status: data.rain_status || 'Unknown',
-                    timestamp: new Date().toISOString()
-                };
-
-                portInfo.deviceInfo = {
-                    device_id: sensorData.device_id,
-                    device_name: sensorData.device_name,
-                    location: sensorData.device_location,
-                    connection_status: 'online'
-                };
-
-                this.updateDeviceData(sensorData);
-                this.updateConnectionStatus(true);
-                
-                if (!document.getElementById(`card-distance-${sensorData.device_id}`)) {
-                    this.createDeviceCards();
+                if (idMatch || nameMatch || locMatch) {
+                    portInfo.deviceInfo = portInfo.deviceInfo || {
+                        device_id: `SERIAL_${portInfo.id}`,
+                        device_name: 'Serial Device',
+                        location: 'Serial Port',
+                        connection_status: 'online'
+                    };
+                    if (idMatch) portInfo.deviceInfo.device_id = idMatch[1].trim();
+                    if (nameMatch) portInfo.deviceInfo.device_name = nameMatch[1].trim();
+                    if (locMatch) portInfo.deviceInfo.location = locMatch[1].trim();
+                    this.createDeviceCards(); // Re-render cards if new device info found
+                    return;
                 }
+            }
 
-            } else if (line.includes('Distance:') || line.includes('Soil Moisture:')) {
-                this.parseTextSerialData(line, portInfo);
+            // If device info is known, try to parse sensor data from text lines
+            if (portInfo.deviceInfo) {
+                const currentSensorData = this.deviceData[portInfo.deviceInfo.device_id] || {};
+                let updated = false;
+
+                const distanceMatch = line.match(/Distance:\s*(-?\d+)\s*cm/);
+                if (distanceMatch) { currentSensorData.distance = parseInt(distanceMatch[1]); updated = true; }
+
+                const moistureMatch = line.match(/Soil Moisture:\s*(\d+)%/);
+                if (moistureMatch) { currentSensorData.soil_moisture = parseInt(moistureMatch[1]); updated = true; }
+
+                const tempMatch = line.match(/Temperature:\s*(-?\d+\.?\d*)°C/);
+                if (tempMatch) { currentSensorData.temperature = parseFloat(tempMatch[1]); updated = true; }
+
+                const rainMatch = line.match(/Rain:\s*(\d+)%/);
+                if (rainMatch) { currentSensorData.rain_percentage = parseInt(rainMatch[1]); updated = true; }
+
+                const wifiMatch = line.match(/WiFi Signal:\s*(-?\d+)\s*dBm/);
+                if (wifiMatch) { currentSensorData.wifi_signal = parseInt(wifiMatch[1]); updated = true; }
+
+                const heapMatch = line.match(/Free Heap:\s*(\d+)\s*bytes/);
+                if (heapMatch) { currentSensorData.free_heap = parseInt(heapMatch[1]); updated = true; }
+
+                if (updated) {
+                    currentSensorData.device_id = portInfo.deviceInfo.device_id;
+                    currentSensorData.device_name = portInfo.deviceInfo.device_name;
+                    currentSensorData.device_location = portInfo.deviceInfo.location;
+                    currentSensorData.timestamp = new Date().toISOString();
+                    this.updateDeviceData(currentSensorData);
+                }
             }
         } catch (error) {
-            console.error('Error parsing serial data:', error);
-        }
-    }
-
-    parseTextSerialData(line, portInfo) {
-        if (line.includes('===') && line.includes('(') && line.includes(')')) {
-            const deviceNameMatch = line.match(/===\s*([^(]+)\s*\(([^)]+)\)\s*===/);
-            if (deviceNameMatch) {
-                portInfo.deviceInfo = {
-                    device_name: deviceNameMatch[1].trim(),
-                    device_id: deviceNameMatch[2].trim(),
-                    location: 'Serial Connection',
-                    connection_status: 'online'
-                };
-            }
-            return;
-        }
-
-        if (line.startsWith('Location:')) {
-            const locationMatch = line.match(/Location:\s*(.+)/);
-            if (locationMatch && portInfo.deviceInfo) {
-                portInfo.deviceInfo.location = locationMatch[1].trim();
-            }
-            return;
-        }
-
-        if (!portInfo.deviceInfo) {
-            return;
-        }
-
-        const deviceInfo = portInfo.deviceInfo;
-        let hasData = false;
-        
-        const sensorData = {
-            device_id: deviceInfo.device_id,
-            device_name: deviceInfo.device_name,
-            device_location: deviceInfo.location,
-            distance: this.deviceData[deviceInfo.device_id]?.distance || null,
-            soil_moisture: this.deviceData[deviceInfo.device_id]?.soil_moisture || 0,
-            moisture_status: this.deviceData[deviceInfo.device_id]?.moisture_status || 'Unknown',
-            temperature: this.deviceData[deviceInfo.device_id]?.temperature || null,
-            rain_percentage: this.deviceData[deviceInfo.device_id]?.rain_percentage || 0,
-            rain_status: this.deviceData[deviceInfo.device_id]?.rain_status || 'Unknown',
-            timestamp: new Date().toISOString()
-        };
-
-        const distanceMatch = line.match(/Distance:\s*(\d+)\s*cm/);
-        if (distanceMatch) {
-            sensorData.distance = parseInt(distanceMatch[1]);
-            hasData = true;
-        }
-
-        const moistureMatch = line.match(/Soil Moisture:\s*(\d+)%\s*\(([^)]+)\)/);
-        if (moistureMatch) {
-            sensorData.soil_moisture = parseInt(moistureMatch[1]);
-            sensorData.moisture_status = moistureMatch[2];
-            hasData = true;
-        }
-
-        const tempMatch = line.match(/Temperature:\s*([0-9.]+)°C/);
-        if (tempMatch) {
-            sensorData.temperature = parseFloat(tempMatch[1]);
-            hasData = true;
-        }
-
-        const rainMatch = line.match(/Rain:\s*(\d+)%\s*\(([^)]+)\)/);
-        if (rainMatch) {
-            sensorData.rain_percentage = parseInt(rainMatch[1]);
-            sensorData.rain_status = rainMatch[2];
-            hasData = true;
-        }
-
-        if (hasData) {
-            this.updateDeviceData(sensorData);
-            this.updateConnectionStatus(true);
+            console.error(`Error parsing serial line "${line}":`, error);
         }
     }
 
@@ -1345,36 +1509,6 @@ class IoTDashboard {
             </div>
         `;
         alertsContainer.innerHTML = alert;
-    }
-
-    async disconnectSerial() {
-        try {
-            for (const portInfo of this.connectedSerialPorts) {
-                if (portInfo.reader) {
-                    await portInfo.reader.cancel();
-                    portInfo.reader.releaseLock();
-                }
-                if (portInfo.port) {
-                    await portInfo.port.close();
-                }
-            }
-
-            this.serialConnected = false;
-            this.usingSerial = false;
-            this.connectedSerialPorts = [];
-            this.currentSerialDevice = null;
-
-            this.updateSerialPortUI();
-            this.createDeviceCards();
-            this.startRealTimeUpdates();
-
-        } catch (error) {
-            console.error('Serial disconnection error:', error);
-        }
-    }
-
-    updateSerialPortUI() {
-        this.serialConnected = this.connectedSerialPorts.length > 0;
     }
 }
 

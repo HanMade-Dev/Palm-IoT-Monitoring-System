@@ -1,6 +1,6 @@
-
 <?php
 require_once 'config.php';
+require_once '../config/api_keys.php'; // Include API key management functions
 
 header('Content-Type: application/json');
 
@@ -47,7 +47,7 @@ try {
     $pdo->beginTransaction();
 
     try {
-        // Delete device status first (due to foreign key)
+        // Delete device status first (due to foreign key constraint if any)
         $deleteStatusSql = "DELETE FROM device_status WHERE device_id = ?";
         $deleteStatusStmt = $pdo->prepare($deleteStatusSql);
         $deleteStatusStmt->execute([$deviceId]);
@@ -62,9 +62,8 @@ try {
         $deleteDeviceStmt = $pdo->prepare($deleteDeviceSql);
         $deleteDeviceStmt->execute([$deviceId]);
 
-        // Remove API key
-        require_once '../config/api_keys.php';
-        removeApiKey($deviceId);
+        // Remove API key associated with the device
+        removeApiKeyByDeviceId($deviceId); // New function to remove key by device_id
 
         $pdo->commit();
         
@@ -73,7 +72,7 @@ try {
 
     } catch (Exception $e) {
         $pdo->rollBack();
-        throw $e;
+        throw $e; // Re-throw to be caught by outer catch block
     }
 
 } catch (Exception $e) {
