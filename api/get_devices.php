@@ -40,7 +40,7 @@ try {
             (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
         FROM devices d
         LEFT JOIN device_status ds ON d.device_id = ds.device_id
-        WHERE d.device_id = ? AND d.is_active = TRUE";
+        WHERE d.device_id = ?"; // Removed AND d.is_active = TRUE to show all registered devices
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$deviceId]);
@@ -64,8 +64,7 @@ try {
             (SELECT timestamp FROM sensor_data WHERE device_id = d.device_id ORDER BY timestamp DESC LIMIT 1) as last_reading
         FROM devices d
         LEFT JOIN device_status ds ON d.device_id = ds.device_id
-        WHERE d.is_active = TRUE
-        ORDER BY d.device_name";
+        ORDER BY d.device_name"; // Removed WHERE d.is_active = TRUE to show all registered devices
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute();
@@ -100,4 +99,3 @@ try {
     http_response_code(500);
     sendResponse(false, [], 'Failed to fetch devices: ' . $e->getMessage());
 }
-?>

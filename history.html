@@ -94,6 +94,95 @@
             </div>
         </div>
 
+        <!-- Data Analytics Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-chart-pie"></i> Ringkasan Analisis Data
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Distance Analytics -->
+                            <div class="col-lg-3 col-md-6">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">Jarak Air (cm)</div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Min</div>
+                                        <div class="analytics-value" id="distance-min">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Max</div>
+                                        <div class="analytics-value" id="distance-max">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Rata-rata</div>
+                                        <div class="analytics-value" id="distance-avg">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Soil Moisture Analytics -->
+                            <div class="col-lg-3 col-md-6">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">Kelembaban Tanah (%)</div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Min</div>
+                                        <div class="analytics-value" id="moisture-min">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Max</div>
+                                        <div class="analytics-value" id="moisture-max">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Rata-rata</div>
+                                        <div class="analytics-value" id="moisture-avg">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Temperature Analytics -->
+                            <div class="col-lg-3 col-md-6">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">Suhu Udara (°C)</div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Min</div>
+                                        <div class="analytics-value" id="temperature-min">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Max</div>
+                                        <div class="analytics-value" id="temperature-max">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Rata-rata</div>
+                                        <div class="analytics-value" id="temperature-avg">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Rain Analytics -->
+                            <div class="col-lg-3 col-md-6">
+                                <div class="analytics-card">
+                                    <div class="analytics-header">Hujan (%)</div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Min</div>
+                                        <div class="analytics-value" id="rain-min">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Max</div>
+                                        <div class="analytics-value" id="rain-max">--</div>
+                                    </div>
+                                    <div class="analytics-item">
+                                        <div class="analytics-label">Rata-rata</div>
+                                        <div class="analytics-value" id="rain-avg">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Chart Cards -->
         <div class="row mb-4">
             <div class="col-lg-6 col-md-12 mb-4">
@@ -167,7 +256,7 @@
                                         <th>Waktu</th>
                                         <th>Jarak Air (cm)</th>
                                         <th>Kelembaban (%)</th>
-                                        <th>Suhu (Â°C)</th>
+                                        <th>Suhu (°C)</th>
                                         <th>Hujan (%)</th>
                                         <th>Status</th>
                                     </tr>
@@ -196,6 +285,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/history.js"></script>
+    <script src="js/history.js"></script> <!-- Pastikan ini mengarah ke history.js -->
 </body>
 </html>

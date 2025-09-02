@@ -281,7 +281,7 @@ function exportToCsv($deviceId, $filterType, $startDate, $endDate, $targetDate, 
     header('Content-Disposition: attachment; filename="sensor_data_' . date('Y-m-d_H-i-s') . '.csv"');
     
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Device ID', 'Device Name', 'Location', 'Timestamp', 'Distance (cm)', 'Soil Moisture (%)', 'Temperature (Â°C)', 'Rain (%)']);
+    fputcsv($output, ['Device ID', 'Device Name', 'Location', 'Timestamp', 'Distance (cm)', 'Soil Moisture (%)', 'Temperature (°C)', 'Rain (%)']);
     
     foreach ($combinedData as $row) {
         fputcsv($output, [

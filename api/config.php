@@ -232,13 +232,13 @@ function flushBufferToDatabase() {
                     $temperatureStatus,
                     $data['rain_percentage'] ?? null,
                     $rainStatus,
-                    $data['timestamp'] ?? date('Y-m-d H:i:s')
+                    $data['timestamp'] ?? date('Y-m-d H:i:s') // Use timestamp from buffer or current time
                 ]);
 
                 // Update device status
                 $statusStmt->execute([
                     $data['device_id'],
-                    $data['timestamp'] ?? date('Y-m-d H:i:s'),
+                    $data['timestamp'] ?? date('Y-m-d H:i:s'), // Use timestamp from buffer or current time for last_seen
                     $data['wifi_signal'] ?? null,
                     $data['free_heap'] ?? null,
                     $data['firmware_version'] ?? '1.0.0'
@@ -297,4 +297,3 @@ function getRainStatus($rainPercentage) {
     if ($rainPercentage < 50) return 'Gerimis';
     return 'Hujan';
 }
-?>

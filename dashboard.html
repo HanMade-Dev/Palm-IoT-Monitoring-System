@@ -172,7 +172,7 @@
                                 </div>
                                 <div class="sensor-content">
                                     <h6 class="sensor-title">Suhu Udara</h6>
-                                    <div class="sensor-value" id="modal-temperature-value">--Â°C</div>
+                                    <div class="sensor-value" id="modal-temperature-value">--°C</div>
                                     <div class="sensor-status" id="modal-temperature-status">Loading...</div>
                                 </div>
                             </div>
@@ -191,17 +191,47 @@
                         </div>
                     </div>
 
-                    
-
-                    <!-- Chart -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-chart-line"></i> Real-time Trend
-                            </h5>
+                    <!-- Charts for each parameter -->
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0"><i class="fas fa-chart-line"></i> Jarak Air Trend</h6>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="modalChartDistance" height="150"></canvas>
+                                </div>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <canvas id="modalChart" height="200"></canvas>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0"><i class="fas fa-chart-line"></i> Kelembaban Tanah Trend</h6>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="modalChartMoisture" height="150"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0"><i class="fas fa-chart-line"></i> Suhu Udara Trend</h6>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="modalChartTemperature" height="150"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0"><i class="fas fa-chart-line"></i> Hujan Trend</h6>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="modalChartRain" height="150"></canvas>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -376,6 +406,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/dashboard.js"></script>
+    <script src="js/dashboard.js"></script> <!-- Pastikan ini mengarah ke dashboard.js yang baru -->
 </body>
 </html>

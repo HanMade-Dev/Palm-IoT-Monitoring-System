@@ -1,70 +1,476 @@
-// History JavaScript for IoT Monitoring System
+// Dashboard JavaScript for IoT Monitoring System
 
-class IoTHistory {
+class IoTDashboard {
     constructor() {
         this.apiBaseUrl = 'api/';
-        this.currentPage = 1;
-        this.recordsPerPage = 50;
-        this.totalRecords = 0;
-        this.charts = {}; // Object to hold multiple chart instances
         this.devices = [];
-        
+        this.detailCharts = {}; // To store Chart.js instances for the detail modal
+        this.refreshInterval = null;
+        this.lastUpdateElement = document.getElementById('last-update');
+        this.connectionStatusElement = document.getElementById('connection-status');
+        this.manageDeviceModal = new bootstrap.Modal(document.getElementById('manageDeviceModal'));
+        this.deviceDetailModal = new bootstrap.Modal(document.getElementById('deviceDetailModal'));
+        this.editDeviceModal = new bootstrap.Modal(document.getElementById('editDeviceModal'));
+
         this.init();
     }
 
     init() {
-        this.setupCharts(); // Setup all four charts
-        this.setupDateDefaults(); // Set default date inputs
-        this.loadDevices();
-        this.loadHistoryData(); // Initial load without specific filters
+        this.refreshData();
+        this.startAutoRefresh();
         this.setupEventListeners();
-        updateDateTimeInputs(); // Call once to set initial visibility
     }
 
-    setupCharts() {
-        // Chart for Distance
-        this.charts.distance = new Chart(document.getElementById('chartDistance').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Jarak Air (cm)', data: [], borderColor: '#0dcaf0', backgroundColor: 'rgba(13, 202, 240, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Jarak Air (cm)', 'cm', 0, 100)
-        });
+    startAutoRefresh() {
+        // Refresh data every 10 seconds
+        this.refreshInterval = setInterval(() => this.refreshData(), 10000);
+    }
 
-        // Chart for Soil Moisture
-        this.charts.moisture = new Chart(document.getElementById('chartMoisture').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Kelembaban Tanah (%)', data: [], borderColor: '#198754', backgroundColor: 'rgba(25, 135, 84, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Kelembaban Tanah (%)', '%', 0, 100)
-        });
+    stopAutoRefresh() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
+        }
+    }
 
-        // Chart for Temperature
-        this.charts.temperature = new Chart(document.getElementById('chartTemperature').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Suhu Udara (°C)', data: [], borderColor: '#ffc107', backgroundColor: 'rgba(255, 193, 7, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Suhu Udara (°C)', '°C', 0, 50)
-        });
+    async refreshData() {
+        try {
+            this.connectionStatusElement.textContent = 'Connecting...';
+            this.connectionStatusElement.classList.remove('bg-success', 'bg-danger', 'bg-warning');
+            this.connectionStatusElement.classList.add('bg-info');
 
-        // Chart for Rain
-        this.charts.rain = new Chart(document.getElementById('chartRain').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Hujan (%)', data: [], borderColor: '#6f42c1', backgroundColor: 'rgba(111, 66, 193, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Hujan (%)', '%', 0, 100)
+            // Fetch all registered devices first
+            const allDevicesResponse = await fetch(`${this.apiBaseUrl}get_devices.php`);
+            const allDevicesData = await allDevicesResponse.json();
+
+            if (!allDevicesData.success) {
+                throw new Error(allDevicesData.message || 'Failed to fetch all devices');
+            }
+            const registeredDevices = allDevicesData.data;
+
+            // Fetch live data (which includes online status and latest sensor readings)
+            const liveDataResponse = await fetch(`${this.apiBaseUrl}live.php`);
+            const liveData = await liveDataResponse.json();
+
+            if (!liveData.success) {
+                throw new Error(liveData.message || 'Failed to fetch live data');
+            }
+            const liveSensorData = liveData.data;
+
+            // Merge registered devices with live sensor data
+            // This ensures all registered devices are displayed, even if they have no recent live data
+            this.devices = registeredDevices.map(registeredDevice => {
+                const liveInfo = liveSensorData.find(lsd => lsd.device_id === registeredDevice.device_id);
+                return { ...registeredDevice, ...(liveInfo || {}) };
+            });
+
+            this.renderDeviceCards();
+            this.updateAlerts();
+            this.updateConnectionStatus(true);
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            this.updateConnectionStatus(false);
+            this.showToast('Error', `Failed to load data: ${error.message}`, 'danger');
+        } finally {
+            this.lastUpdateElement.textContent = new Date().toLocaleTimeString();
+        }
+    }
+
+    updateConnectionStatus(isConnected) {
+        if (isConnected) {
+            this.connectionStatusElement.textContent = 'Connected';
+            this.connectionStatusElement.classList.remove('bg-info', 'bg-danger', 'bg-warning');
+            this.connectionStatusElement.classList.add('bg-success');
+        } else {
+            this.connectionStatusElement.textContent = 'Disconnected';
+            this.connectionStatusElement.classList.remove('bg-info', 'bg-success', 'bg-warning');
+            this.connectionStatusElement.classList.add('bg-danger');
+        }
+    }
+
+    renderDeviceCards() {
+        const container = document.getElementById('devices-container');
+        container.innerHTML = ''; // Clear existing cards
+
+        if (this.devices.length === 0) {
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-warning text-center">
+                        <i class="fas fa-exclamation-triangle fs-2 mb-3"></i>
+                        <h5>No devices found.</h5>
+                        <p>Add a new device using the "Manage Device" button.</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        this.devices.forEach(device => {
+            const statusClass = device.is_online ? 'bg-success' : 'bg-danger';
+            const statusText = device.is_online ? 'Online' : 'Offline';
+            const lastSeen = device.last_seen ? new Date(device.last_seen).toLocaleString() : 'N/A';
+
+            // Determine sensor values and statuses based on online status
+            const displayDistance = device.is_online && device.distance !== null ? `${device.distance} cm` : '--';
+            const displayMoisture = device.is_online && device.soil_moisture !== null ? `${device.soil_moisture}%` : '--';
+            const displayTemperature = device.is_online && device.temperature !== null ? `${device.temperature.toFixed(1)}°C` : '--';
+            const displayRain = device.is_online && device.rain_percentage !== null ? `${device.rain_percentage}%` : '--';
+
+            const cardHtml = `
+                <div class="col-lg-4 col-md-6 col-sm-12">
+                    <div class="device-card" data-device-id="${device.device_id}">
+                        <div class="device-card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="device-card-title">${device.device_name}</h5>
+                                <p class="device-card-subtitle mb-0">${device.location || 'N/A'}</p>
+                            </div>
+                            <span class="badge ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="mini-sensor">
+                                        <div class="mini-sensor-icon bg-primary"><i class="fas fa-water"></i></div>
+                                        <div class="mini-sensor-value">${displayDistance}</div>
+                                        <div class="mini-sensor-label">Jarak Air</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="mini-sensor">
+                                        <div class="mini-sensor-icon bg-success"><i class="fas fa-tint"></i></div>
+                                        <div class="mini-sensor-value">${displayMoisture}</div>
+                                        <div class="mini-sensor-label">Kelembaban Tanah</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="mini-sensor">
+                                        <div class="mini-sensor-icon bg-warning"><i class="fas fa-thermometer-half"></i></div>
+                                        <div class="mini-sensor-value">${displayTemperature}</div>
+                                        <div class="mini-sensor-label">Suhu Udara</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="mini-sensor">
+                                        <div class="mini-sensor-icon bg-info"><i class="fas fa-cloud-rain"></i></div>
+                                        <div class="mini-sensor-value">${displayRain}</div>
+                                        <div class="mini-sensor-label">Hujan</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mini-chart-container">
+                                <canvas id="miniChart-${device.device_id}"></canvas>
+                            </div>
+                        </div>
+                        <div class="device-card-footer">
+                            <small class="text-muted">Last Seen: ${lastSeen}</small>
+                            <button class="btn btn-sm btn-outline-primary" onclick="window.iotDashboard.showDeviceDetail('${device.device_id}')">
+                                Detail <i class="fas fa-arrow-right ms-1"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', cardHtml);
+            this.createMiniChart(device);
         });
     }
 
-    getChartOptions(titleText, unit, min, max) {
+    createMiniChart(device) {
+        const ctx = document.getElementById(`miniChart-${device.device_id}`).getContext('2d');
+        // Destroy existing chart if it exists
+        if (Chart.getChart(ctx)) {
+            Chart.getChart(ctx).destroy();
+        }
+
+        let dataPoints = [];
+        let labels = [];
+
+        if (device.is_online && device.soil_moisture !== null) {
+            // For simplicity, mini-chart will show soil moisture trend
+            // In a real application, you might fetch recent history for this.
+            // Using dummy data for mini-chart if device is online and has data
+            dataPoints = [device.soil_moisture * 0.8, device.soil_moisture, device.soil_moisture * 1.2].map(val => Math.max(0, Math.min(100, val)));
+            labels = ['Past', 'Current', 'Future']; // Dummy labels
+        }
+        // If device is offline or has no data, dataPoints and labels remain empty
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Kelembaban Tanah',
+                    data: dataPoints,
+                    borderColor: '#198754',
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0 // Hide points
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: false },
+                    tooltip: { enabled: false } // Disable tooltips for mini chart
+                },
+                scales: {
+                    x: { display: false },
+                    y: { display: false, min: 0, max: 100 }
+                },
+                elements: {
+                    line: { borderWidth: 1.5 }
+                }
+            }
+        });
+    }
+
+    updateAlerts() {
+        const alertsContainer = document.getElementById('alerts-container');
+        alertsContainer.innerHTML = ''; // Clear existing alerts
+        let hasAlerts = false;
+
+        this.devices.forEach(device => {
+            const alerts = [];
+            if (!device.is_online) {
+                alerts.push(`Device ${device.device_name} (${device.device_id}) is offline.`);
+            } else { // Only check sensor alerts if device is online
+                if (device.distance !== null && device.distance < 20) {
+                    alerts.push(`Water level in ${device.device_name} (${device.location}) is critically high (${device.distance} cm).`);
+                }
+                if (device.soil_moisture !== null && device.soil_moisture < 30) {
+                    alerts.push(`Soil in ${device.device_name} (${device.location}) is too dry (${device.soil_moisture}%).`);
+                }
+                if (device.temperature !== null && device.temperature > 35) {
+                    alerts.push(`Temperature in ${device.device_name} (${device.location}) is high (${device.temperature.toFixed(1)}°C).`);
+                }
+                if (device.rain_percentage !== null && device.rain_percentage > 70) {
+                    alerts.push(`Heavy rain detected at ${device.device_name} (${device.location}) (${device.rain_percentage}%).`);
+                }
+            }
+
+            alerts.forEach(alertMsg => {
+                hasAlerts = true;
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-warning alert-dismissible fade show mb-2';
+                alertDiv.role = 'alert';
+                alertDiv.innerHTML = `
+                    <i class="fas fa-bell me-2"></i>
+                    ${alertMsg}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+                alertsContainer.appendChild(alertDiv);
+            });
+        });
+
+        if (!hasAlerts) {
+            alertsContainer.innerHTML = '<div class="text-muted text-center">Tidak ada alert saat ini</div>';
+        }
+    }
+
+    async showDeviceDetail(deviceId) {
+        const device = this.devices.find(d => d.device_id === deviceId);
+        if (!device) {
+            this.showToast('Error', 'Device not found.', 'danger');
+            return;
+        }
+
+        // Populate modal with device data
+        document.getElementById('modal-device-id').textContent = device.device_id;
+        document.getElementById('modal-device-name').textContent = device.device_name;
+        document.getElementById('modal-device-location').textContent = device.location || 'N/A';
+
+        const connectionBadge = document.getElementById('modal-connection-badge');
+        connectionBadge.textContent = device.is_online ? 'Online' : 'Offline';
+        connectionBadge.className = `badge ${device.is_online ? 'bg-success' : 'bg-danger'}`;
+        document.getElementById('modal-last-seen').textContent = device.last_seen ? `Last Seen: ${new Date(device.last_seen).toLocaleString()}` : 'Last Seen: N/A';
+
+        // Update sensor data in modal directly from the 'device' object (which contains live data)
+        if (!device.is_online) {
+            document.getElementById('modal-distance-value').textContent = '-- cm';
+            document.getElementById('modal-distance-status').textContent = 'Offline';
+            document.getElementById('modal-moisture-value').textContent = '--%';
+            document.getElementById('modal-moisture-status').textContent = 'Offline';
+            document.getElementById('modal-temperature-value').textContent = '--°C';
+            document.getElementById('modal-temperature-status').textContent = 'Offline';
+            document.getElementById('modal-rain-value').textContent = '--%';
+            document.getElementById('modal-rain-status').textContent = 'Offline';
+        } else {
+            document.getElementById('modal-distance-value').textContent = device.distance !== null ? `${device.distance} cm` : '-- cm';
+            document.getElementById('modal-distance-status').textContent = device.distance_status || 'Unknown';
+            document.getElementById('modal-moisture-value').textContent = device.soil_moisture !== null ? `${device.soil_moisture}%` : '--%';
+            document.getElementById('modal-moisture-status').textContent = device.moisture_status || 'Unknown';
+            document.getElementById('modal-temperature-value').textContent = device.temperature !== null ? `${device.temperature.toFixed(1)}°C` : '--°C';
+            document.getElementById('modal-temperature-status').textContent = device.temperature_status || 'Unknown';
+            document.getElementById('modal-rain-value').textContent = device.rain_percentage !== null ? `${device.rain_percentage}%` : '--%';
+            document.getElementById('modal-rain-status').textContent = device.rain_status || 'Unknown';
+        }
+
+        // Fetch historical data for the charts in the modal
+        await this.loadAndRenderDetailCharts(deviceId, device.is_online);
+
+        this.deviceDetailModal.show();
+    }
+
+    async loadAndRenderDetailCharts(deviceId, isOnline) {
+        // Destroy existing charts if they exist
+        for (const chartKey in this.detailCharts) {
+            if (this.detailCharts[chartKey]) {
+                this.detailCharts[chartKey].destroy();
+                this.detailCharts[chartKey] = null;
+            }
+        }
+
+        if (!isOnline) {
+            // If device is offline, initialize charts with empty data
+            this.initializeEmptyCharts();
+            this.showToast('Info', 'Device is offline. Historical data charts are empty.', 'info');
+            return;
+        }
+
+        try {
+            // Fetch all historical data for the specific device
+            // Removed date filters to get all available history for the device
+            const response = await fetch(`${this.apiBaseUrl}get_history.php?device_id=${deviceId}&limit=500`); // Fetch more data for charts
+            const data = await response.json();
+
+            if (data.success && data.data.length > 0) {
+                const historyData = data.data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // Sort ascending
+
+                const labels = historyData.map(row => new Date(row.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+                
+                // Render Distance Chart
+                this.detailCharts.distance = new Chart(document.getElementById('modalChartDistance').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Jarak Air (cm)',
+                            data: historyData.map(row => row.distance),
+                            borderColor: '#0dcaf0',
+                            backgroundColor: 'rgba(13, 202, 240, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: this.getDetailChartOptions('Jarak Air (cm)', 'cm', 0, 100)
+                });
+
+                // Render Moisture Chart
+                this.detailCharts.moisture = new Chart(document.getElementById('modalChartMoisture').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Kelembaban Tanah (%)',
+                            data: historyData.map(row => row.soil_moisture),
+                            borderColor: '#198754',
+                            backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: this.getDetailChartOptions('Kelembaban Tanah (%)', '%', 0, 100)
+                });
+
+                // Render Temperature Chart
+                this.detailCharts.temperature = new Chart(document.getElementById('modalChartTemperature').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Suhu Udara (°C)',
+                            data: historyData.map(row => row.temperature),
+                            borderColor: '#ffc107',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: this.getDetailChartOptions('Suhu Udara (°C)', '°C', 0, 50)
+                });
+
+                // Render Rain Chart
+                this.detailCharts.rain = new Chart(document.getElementById('modalChartRain').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Hujan (%)',
+                            data: historyData.map(row => row.rain_percentage),
+                            borderColor: '#6f42c1',
+                            backgroundColor: 'rgba(111, 66, 193, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: this.getDetailChartOptions('Hujan (%)', '%', 0, 100)
+                });
+
+            } else {
+                this.initializeEmptyCharts();
+                this.showToast('Info', 'No historical data available for this device.', 'info'); // Changed message
+            }
+        } catch (error) {
+            console.error('Error loading detail charts:', error);
+            this.initializeEmptyCharts();
+            this.showToast('Error', 'Failed to load historical data for charts.', 'danger');
+        }
+    }
+
+    initializeEmptyCharts() {
+        const emptyChartOptions = (titleText, unit) => ({
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: {
+                    display: true,
+                    text: `${titleText} (No Data)`,
+                    font: { size: 12, weight: 'bold' }
+                },
+                tooltip: { enabled: false }
+            },
+            scales: {
+                x: { display: false },
+                y: { display: false }
+            }
+        });
+
+        this.detailCharts.distance = new Chart(document.getElementById('modalChartDistance').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [] }] },
+            options: emptyChartOptions('Jarak Air (cm)', 'cm')
+        });
+        this.detailCharts.moisture = new Chart(document.getElementById('modalChartMoisture').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [] }] },
+            options: emptyChartOptions('Kelembaban Tanah (%)', '%')
+        });
+        this.detailCharts.temperature = new Chart(document.getElementById('modalChartTemperature').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [] }] },
+            options: emptyChartOptions('Suhu Udara (°C)', '°C')
+        });
+        this.detailCharts.rain = new Chart(document.getElementById('modalChartRain').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [] }] },
+            options: emptyChartOptions('Hujan (%)', '%')
+        });
+    }
+
+    getDetailChartOptions(titleText, unit, min, max) {
         return {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
             plugins: {
-                legend: { display: false }, // Hide legend as each chart is for one sensor
+                legend: { display: false },
                 title: {
                     display: true,
                     text: titleText,
-                    font: { size: 14, weight: 'bold' }
+                    font: { size: 12, weight: 'bold' }
                 },
                 tooltip: {
                     callbacks: {
@@ -77,19 +483,11 @@ class IoTHistory {
             scales: {
                 x: {
                     display: true,
-                    title: {
-                        display: true,
-                        text: 'Waktu'
-                    }
+                    title: { display: true, text: 'Waktu' }
                 },
                 y: {
-                    type: 'linear',
                     display: true,
-                    position: 'left',
-                    title: {
-                        display: true,
-                        text: `${titleText.split('(')[0].trim()} (${unit})`
-                    },
+                    title: { display: true, text: unit },
                     min: min,
                     max: max
                 }
@@ -97,464 +495,233 @@ class IoTHistory {
         };
     }
 
-    setupDateDefaults() {
-        // Set filter type to 'none' for default all data
-        document.getElementById('filter-type').value = 'none'; 
-        document.getElementById('start-date').value = ''; 
-        document.getElementById('end-date').value = ''; 
-        
-        // Set default datetime for minute/hour filters to current time
-        const now = new Date();
-        const datetimeString = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:MM
-        document.getElementById('datetime-input').value = datetimeString;
+    // --- Manage Device Functions ---
+    showManageDeviceModal() {
+        this.manageDeviceModal.show();
+        this.loadDeviceManagementList();
+        // Reset add device form
+        document.getElementById('addDeviceForm').reset();
+        document.getElementById('addDeviceSuccess').classList.add('d-none');
+        document.getElementById('add-device-tab').classList.remove('active');
+        document.getElementById('add-device').classList.remove('show', 'active');
+        document.getElementById('device-list-tab').classList.add('active');
+        document.getElementById('device-list').classList.add('show', 'active');
     }
 
-    async loadDevices() {
+    async loadDeviceManagementList() {
+        const listBody = document.getElementById('deviceManagementList');
+        listBody.innerHTML = `<tr><td colspan="5" class="text-center">Loading devices...</td></tr>`;
         try {
             const response = await fetch(`${this.apiBaseUrl}get_devices.php`);
             const data = await response.json();
-            
             if (data.success) {
-                this.devices = data.data;
-                this.updateDeviceSelector();
-            } else {
-                console.error('Failed to load devices for history filter:', data.message);
-            }
-        } catch (error) {
-            console.error('Error loading devices for history filter:', error);
-        }
-    }
-    
-    updateDeviceSelector() {
-        const deviceSelect = document.getElementById('device-select-history');
-        deviceSelect.innerHTML = '<option value="all">Semua Device</option>';
-        
-        this.devices.forEach(device => {
-            const option = document.createElement('option');
-            option.value = device.device_id;
-            option.textContent = `${device.device_name} (${device.location})`;
-            deviceSelect.appendChild(option);
-        });
-    }
-
-    async loadHistoryData(page = 1) {
-        try {
-            this.showLoading();
-            
-            const filterType = document.getElementById('filter-type').value;
-            const deviceId = document.getElementById('device-select-history').value;
-            const params = new URLSearchParams({
-                page: page,
-                limit: this.recordsPerPage,
-                // sensor_type is no longer needed for chart visibility as charts are separate
-            });
-            
-            // Add device filter
-            if (deviceId !== 'all') {
-                params.append('device_id', deviceId);
-            }
-
-            // Add date/time parameters based on filter type, ONLY if they have values
-            if (filterType === 'range') {
-                const startDate = document.getElementById('start-date').value;
-                const endDate = document.getElementById('end-date').value;
-                if (startDate) params.append('start_date', startDate);
-                if (endDate) params.append('end_date', endDate);
-                params.append('filter_type', filterType);
-            } else if (filterType === 'day') {
-                const selectedDate = document.getElementById('start-date').value; // Re-using start-date for single day
-                if (selectedDate) params.append('target_date', selectedDate);
-                params.append('filter_type', filterType);
-            } else if (filterType === 'hour' || filterType === 'minute') {
-                const datetimeValue = document.getElementById('datetime-input').value;
-                if (datetimeValue) {
-                    params.append('target_datetime', datetimeValue);
-                    params.append('time_granularity', filterType);
+                if (data.data.length === 0) {
+                    listBody.innerHTML = `<tr><td colspan="5" class="text-center">No devices registered.</td></tr>`;
+                    return;
                 }
-                params.append('filter_type', filterType);
-            } else { // filterType === 'none' or default
-                params.append('filter_type', 'none'); // Explicitly tell backend no date filter
-            }
-
-            const response = await fetch(`${this.apiBaseUrl}get_history.php?${params}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                this.updateTable(data.data);
-                this.updateAllCharts(data.data); // Update all four charts
-                this.updateAnalytics(data.data);
-                this.updatePagination(data.pagination);
-                this.totalRecords = data.pagination.total;
-                this.currentPage = page;
-                
-                document.getElementById('total-records').textContent = 
-                    `${data.pagination.total} records`;
+                listBody.innerHTML = data.data.map(device => `
+                    <tr>
+                        <td>${device.device_id}</td>
+                        <td>${device.device_name}</td>
+                        <td>${device.location || 'N/A'}</td>
+                        <td><span class="badge ${device.is_online ? 'bg-success' : 'bg-danger'}">${device.is_online ? 'Online' : 'Offline'}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-info me-2" onclick="window.iotDashboard.showEditDeviceModal('${device.device_id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="window.iotDashboard.deleteDevice('${device.device_id}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
             } else {
-                throw new Error(data.message || 'Failed to load history data');
+                this.showToast('Error', `Failed to load device list: ${data.message}`, 'danger');
+                listBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading devices.</td></tr>`;
             }
         } catch (error) {
-            console.error('Error loading history data:', error);
-            this.showError('Gagal memuat data historis. Silakan coba lagi.');
+            console.error('Error loading device list:', error);
+            this.showToast('Error', `Failed to load device list: ${error.message}`, 'danger');
+            listBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading devices.</td></tr>`;
         }
     }
 
-    updateTable(data) {
-        const tbody = document.getElementById('data-table-body');
-        
-        if (!data || data.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="text-center text-muted">
-                        Tidak ada data untuk periode yang dipilih
-                    </td>
-                </tr>
-            `;
+    async addDevice() {
+        const deviceId = document.getElementById('deviceId').value.trim();
+        const deviceName = document.getElementById('deviceName').value.trim();
+        const deviceLocation = document.getElementById('deviceLocation').value.trim();
+        const deviceDescription = document.getElementById('deviceDescription').value.trim();
+
+        if (!deviceId || !deviceName) {
+            this.showToast('Validation Error', 'Device ID and Device Name are required.', 'warning');
+            return;
+        }
+        if (!/^[A-Za-z0-9_]+$/.test(deviceId)) {
+            this.showToast('Validation Error', 'Device ID can only contain letters, numbers, and underscores.', 'warning');
             return;
         }
 
-        const rows = data.map(row => {
-            // Use device_name and location directly from row if available (from buffer)
-            // Otherwise, find from this.devices (from DB)
-            const deviceName = row.device_name || (this.devices.find(d => d.device_id === row.device_id)?.device_name || row.device_id);
-            const location = row.location || (this.devices.find(d => d.device_id === row.device_id)?.location || '-');
-
-            const datetime = new Date(row.timestamp).toLocaleString('id-ID');
-            const distance = row.distance !== null ? `${row.distance} cm` : '-';
-            const moisture = row.soil_moisture !== null ? `${row.soil_moisture}%` : '-';
-            const temperature = row.temperature !== null ? `${parseFloat(row.temperature).toFixed(1)}°C` : '-';
-            const rain = row.rain_percentage !== null ? `${row.rain_percentage}%` : '-';
-            const status = this.getOverallStatus(row);
-            
-            return `
-                <tr>
-                    <td class="text-dark">${deviceName}</td>
-                    <td class="text-dark">${datetime}</td>
-                    <td class="text-dark">${distance}</td>
-                    <td class="text-dark">${moisture}</td>
-                    <td class="text-dark">${temperature}</td>
-                    <td class="text-dark">${rain}</td>
-                    <td><span class="badge ${status.class}">${status.text}</span></td>
-                </tr>
-            `;
-        }).join('');
-
-        tbody.innerHTML = rows;
-    }
-
-    updateAllCharts(data) {
-        if (!data || data.length === 0) {
-            Object.values(this.charts).forEach(chart => {
-                chart.data.labels = [];
-                chart.data.datasets.forEach(dataset => { dataset.data = []; });
-                chart.update();
+        try {
+            const response = await fetch(`${this.apiBaseUrl}add_device.php`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    device_id: deviceId,
+                    device_name: deviceName,
+                    location: deviceLocation,
+                    description: deviceDescription
+                })
             });
-            return;
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('addDeviceForm').classList.add('d-none');
+                document.getElementById('successDeviceId').textContent = data.data.device_id;
+                document.getElementById('generatedEspCode').textContent = data.data.esp_code;
+                document.getElementById('addDeviceSuccess').classList.remove('d-none');
+                this.showToast('Success', 'Device added successfully!', 'success');
+                this.refreshData(); // Refresh dashboard to show new device
+                this.loadDeviceManagementList(); // Refresh device list in modal
+            } else {
+                this.showToast('Error', `Failed to add device: ${data.message}`, 'danger');
+            }
+        } catch (error) {
+            console.error('Error adding device:', error);
+            this.showToast('Error', `Failed to add device: ${error.message}`, 'danger');
         }
+    }
 
-        // Sort data by timestamp ascending for chart
-        const sortedData = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        // Limit data points for better performance on chart
-        const maxPoints = 200; // Max points to display on chart
-        const step = Math.max(1, Math.floor(sortedData.length / maxPoints));
-        const filteredData = sortedData.filter((_, index) => index % step === 0);
-
-        const labels = filteredData.map(row => {
-            const date = new Date(row.timestamp);
-            return date.toLocaleDateString('id-ID') + ' ' + 
-                   date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    copyEspCode() {
+        const espCode = document.getElementById('generatedEspCode').textContent;
+        navigator.clipboard.writeText(espCode).then(() => {
+            this.showToast('Copied!', 'ESP32 code copied to clipboard.', 'info');
+        }).catch(err => {
+            console.error('Failed to copy ESP32 code:', err);
+            this.showToast('Error', 'Failed to copy code.', 'danger');
         });
-
-        // Update Distance Chart
-        this.charts.distance.data.labels = labels;
-        this.charts.distance.data.datasets[0].data = filteredData.map(row => row.distance);
-        this.charts.distance.update();
-
-        // Update Moisture Chart
-        this.charts.moisture.data.labels = labels;
-        this.charts.moisture.data.datasets[0].data = filteredData.map(row => row.soil_moisture);
-        this.charts.moisture.update();
-
-        // Update Temperature Chart
-        this.charts.temperature.data.labels = labels;
-        this.charts.temperature.data.datasets[0].data = filteredData.map(row => row.temperature);
-        this.charts.temperature.update();
-
-        // Update Rain Chart
-        this.charts.rain.data.labels = labels;
-        this.charts.rain.data.datasets[0].data = filteredData.map(row => row.rain_percentage);
-        this.charts.rain.update();
     }
 
-    updateAnalytics(data) {
-        if (!data || data.length === 0) {
-            this.resetAnalytics();
+    async showEditDeviceModal(deviceId) {
+        const device = this.devices.find(d => d.device_id === deviceId);
+        if (!device) {
+            this.showToast('Error', 'Device not found for editing.', 'danger');
             return;
         }
 
-        // Extract valid data points, filtering out null/undefined
-        const distances = data.map(row => row.distance).filter(val => val !== null && val !== undefined);
-        const moistures = data.map(row => row.soil_moisture).filter(val => val !== null && val !== undefined);
-        const temperatures = data.map(row => row.temperature).filter(val => val !== null && val !== undefined);
-        const rains = data.map(row => row.rain_percentage).filter(val => val !== null && val !== undefined);
+        document.getElementById('editDeviceId').value = device.device_id;
+        document.getElementById('editDeviceIdDisplay').value = device.device_id;
+        document.getElementById('editDeviceName').value = device.device_name;
+        document.getElementById('editDeviceLocation').value = device.location || '';
+        document.getElementById('editDeviceDescription').value = device.description || '';
 
-        // Helper to calculate min, avg, max
-        const calculateStats = (arr) => {
-            if (arr.length === 0) return { min: '--', avg: '--', max: '--' };
-            const min = Math.min(...arr);
-            const max = Math.max(...arr);
-            const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-            return { min, avg, max };
-        };
-
-        // Analytics section is removed from history.html in this modification,
-        // so this part of the code will not directly update elements.
-        // Keeping it here for completeness if you decide to re-add an analytics summary.
-        const distStats = calculateStats(distances);
-        // document.getElementById('distance-min').textContent = distStats.min !== '--' ? `${distStats.min} cm` : '--';
-        // document.getElementById('distance-max').textContent = distStats.max !== '--' ? `${distStats.max} cm` : '--';
-        // document.getElementById('distance-avg').textContent = distStats.avg !== '--' ? `${distStats.avg.toFixed(1)} cm` : '--';
-
-        const moistStats = calculateStats(moistures);
-        // document.getElementById('moisture-min').textContent = moistStats.min !== '--' ? `${mo moistStats.min}%` : '--';
-        // document.getElementById('moisture-max').textContent = moistStats.max !== '--' ? `${moistStats.max}%` : '--';
-        // document.getElementById('moisture-avg').textContent = moistStats.avg !== '--' ? `${moistStats.avg.toFixed(1)}%` : '--';
-
-        const tempStats = calculateStats(temperatures);
-        // document.getElementById('temperature-min').textContent = tempStats.min !== '--' ? `${tempStats.min.toFixed(1)}°C` : '--';
-        // document.getElementById('temperature-max').textContent = tempStats.max !== '--' ? `${tempStats.max.toFixed(1)}°C` : '--';
-        // document.getElementById('temperature-avg').textContent = tempStats.avg !== '--' ? `${tempStats.avg.toFixed(1)}°C` : '--';
-
-        const rainStats = calculateStats(rains);
-        // document.getElementById('rain-min').textContent = rainStats.min !== '--' ? `${rainStats.min}%` : '--';
-        // document.getElementById('rain-max').textContent = rainStats.max !== '--' ? `${rainStats.max}%` : '--';
-        // document.getElementById('rain-avg').textContent = rainStats.avg !== '--' ? `${rainStats.avg.toFixed(1)}%` : '--';
-
-        // General analytics
-        // document.getElementById('total-data-points').textContent = data.length;
-        
-        // Device count
-        // const uniqueDevices = [...new Set(data.map(row => row.device_id))];
-        // document.getElementById('device-count').textContent = uniqueDevices.length;
-
-        // Data period
-        // if (data.length > 0) {
-        //     const sortedByTime = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        //     const firstDate = new Date(sortedByTime[0].timestamp);
-        //     const lastDate = new Date(sortedByTime[sortedByTime.length - 1].timestamp);
-        //     const period = `${firstDate.toLocaleDateString('id-ID')} - ${lastDate.toLocaleDateString('id-ID')}`;
-        //     // document.getElementById('data-period').textContent = period;
-        // } else {
-        //     // document.getElementById('data-period').textContent = '--';
-        // }
-
-        // document.getElementById('data-status').textContent = 'Loaded';
+        this.editDeviceModal.show();
     }
 
-    resetAnalytics() {
-        // This function is now mostly for placeholder as analytics section is removed
-        // from history.html in this modification.
-    }
+    async updateDevice() {
+        const deviceId = document.getElementById('editDeviceId').value;
+        const deviceName = document.getElementById('editDeviceName').value.trim();
+        const deviceLocation = document.getElementById('editDeviceLocation').value.trim();
+        const deviceDescription = document.getElementById('editDeviceDescription').value.trim();
 
-    updatePagination(pagination) {
-        const paginationContainer = document.getElementById('pagination');
-        
-        if (pagination.total_pages <= 1) {
-            paginationContainer.innerHTML = '';
+        if (!deviceName) {
+            this.showToast('Validation Error', 'Device Name is required.', 'warning');
             return;
         }
 
-        let paginationHtml = '';
-        
-        // Previous button
-        if (pagination.current_page > 1) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.current_page - 1})">
-                        <i class="fas fa-chevron-left"></i>
-                    </a>
-                </li>
-            `;
-        }
+        try {
+            const response = await fetch(`${this.apiBaseUrl}update_device.php`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    device_id: deviceId,
+                    device_name: deviceName,
+                    location: deviceLocation,
+                    description: deviceDescription
+                })
+            });
+            const data = await response.json();
 
-        // Page numbers
-        const startPage = Math.max(1, pagination.current_page - 2);
-        const endPage = Math.min(pagination.total_pages, pagination.current_page + 2);
-
-        if (startPage > 1) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(1)">1</a>
-                </li>
-            `;
-            if (startPage > 2) {
-                paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            if (data.success) {
+                this.showToast('Success', 'Device updated successfully!', 'success');
+                this.editDeviceModal.hide();
+                this.refreshData(); // Refresh dashboard
+                this.loadDeviceManagementList(); // Refresh device list in modal
+            } else {
+                this.showToast('Error', `Failed to update device: ${data.message}`, 'danger');
             }
+        } catch (error) {
+            console.error('Error updating device:', error);
+            this.showToast('Error', `Failed to update device: ${error.message}`, 'danger');
+        }
+    }
+
+    async deleteDevice(deviceId) {
+        if (!confirm(`Are you sure you want to delete device ${deviceId}? This action cannot be undone.`)) {
+            return;
         }
 
-        for (let i = startPage; i <= endPage; i++) {
-            const activeClass = i === pagination.current_page ? 'active' : '';
-            paginationHtml += `
-                <li class="page-item ${activeClass}">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${i})">${i}</a>
-                </li>
-            `;
-        }
+        try {
+            const response = await fetch(`${this.apiBaseUrl}delete_device.php`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: deviceId })
+            });
+            const data = await response.json();
 
-        if (endPage < pagination.total_pages) {
-            if (endPage < pagination.total_pages - 1) {
-                paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            if (data.success) {
+                this.showToast('Success', 'Device deleted successfully!', 'success');
+                this.refreshData(); // Refresh dashboard
+                this.loadDeviceManagementList(); // Refresh device list in modal
+            } else {
+                this.showToast('Error', `Failed to delete device: ${data.message}`, 'danger');
             }
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.total_pages})">
-                        ${pagination.total_pages}
-                    </a>
-                </li>
-            `;
-        }
-
-        // Next button
-        if (pagination.current_page < pagination.total_pages) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.current_page + 1})">
-                        <i class="fas fa-chevron-right"></i>
-                    </a>
-                </li>
-            `;
-        }
-
-        paginationContainer.innerHTML = paginationHtml;
-    }
-
-    getOverallStatus(row) {
-        const alerts = [];
-        
-        // Check each sensor for alerts based on common thresholds
-        if (row.distance !== null && row.distance < 20) alerts.push('water-high'); // Example: water too high
-        if (row.soil_moisture !== null && row.soil_moisture < 30) alerts.push('dry-soil'); // Example: soil too dry
-        if (row.temperature !== null && row.temperature > 35) alerts.push('hot'); // Example: temp too high
-        if (row.rain_percentage !== null && row.rain_percentage > 50) alerts.push('rain'); // Example: raining heavily
-
-        if (alerts.length === 0) {
-            return { class: 'bg-success', text: 'Normal' };
-        } else if (alerts.some(alert => ['water-high', 'hot'].includes(alert))) {
-            return { class: 'bg-danger', text: 'Critical' };
-        } else {
-            return { class: 'bg-warning text-dark', text: 'Warning' };
+        } catch (error) {
+            console.error('Error deleting device:', error);
+            this.showToast('Error', `Failed to delete device: ${error.message}`, 'danger');
         }
     }
 
-    showLoading() {
-        const tbody = document.getElementById('data-table-body');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center">
-                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div> Loading data...
-                </td>
-            </tr>
+    // --- Utility Functions ---
+    showToast(title, message, type = 'info') {
+        const alertPlaceholder = document.getElementById('alertMessages');
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                <strong>${title}:</strong> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         `;
-    }
+        alertPlaceholder.append(wrapper);
 
-    showError(message) {
-        const tbody = document.getElementById('data-table-body');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center text-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>${message}
-                </td>
-            </tr>
-        `;
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            bootstrap.Alert.getInstance(wrapper.querySelector('.alert'))?.close();
+        }, 5000);
     }
 
     setupEventListeners() {
-        // Make loadHistoryData available globally for pagination
-        // window.history = this; // Changed to window.iotHistory to avoid conflict
+        // Event listener for when the manage device modal is hidden
+        document.getElementById('manageDeviceModal').addEventListener('hidden.bs.modal', () => {
+            // Re-enable auto-refresh when modal is closed
+            this.startAutoRefresh();
+        });
 
-        // Attach event listener to filter button
-        document.querySelector('.btn-primary[onclick="applyFilter()"]').addEventListener('click', () => this.loadHistoryData(1));
+        // Event listener for when the manage device modal is shown
+        document.getElementById('manageDeviceModal').addEventListener('show.bs.modal', () => {
+            // Stop auto-refresh when modal is open to prevent conflicts
+            this.stopAutoRefresh();
+        });
+
+        // Event listener for when the add device tab is shown
+        document.getElementById('add-device-tab').addEventListener('shown.bs.tab', () => {
+            document.getElementById('addDeviceForm').classList.remove('d-none');
+            document.getElementById('addDeviceSuccess').classList.add('d-none');
+            document.getElementById('addDeviceForm').reset();
+        });
     }
 }
 
-// Global functions for HTML onclick events
-function applyFilter() {
-    if (window.iotHistory) { // Changed from window.history
-        window.iotHistory.loadHistoryData(1);
-    }
-}
-
-function exportData() {
-    const filterType = document.getElementById('filter-type').value;
-    const deviceId = document.getElementById('device-select-history').value;
-    
-    const params = new URLSearchParams({
-        export: 'csv',
-    });
-    
-    // Add device filter
-    if (deviceId !== 'all') {
-        params.append('device_id', deviceId);
-    }
-    
-    // Add date/time parameters based on filter type
-    if (filterType === 'range') {
-        const startDate = document.getElementById('start-date').value;
-        const endDate = document.getElementById('end-date').value;
-        if (startDate) params.append('start_date', startDate);
-        if (endDate) params.append('end_date', endDate);
-        params.append('filter_type', filterType);
-    } else if (filterType === 'day') {
-        const selectedDate = document.getElementById('start-date').value;
-        if (selectedDate) params.append('target_date', selectedDate);
-        params.append('filter_type', filterType);
-    } else if (filterType === 'hour' || filterType === 'minute') {
-        const datetimeValue = document.getElementById('datetime-input').value;
-        if (datetimeValue) {
-            params.append('target_datetime', datetimeValue);
-            params.append('time_granularity', filterType);
-        }
-        params.append('filter_type', filterType);
-    } else { // filterType === 'none' or default
-        params.append('filter_type', 'none');
-    }
-    
-    window.open(`api/get_history.php?${params}`, '_blank');
-}
-
-// Function to update date/time inputs based on filter type
-function updateDateTimeInputs() {
-    const filterType = document.getElementById('filter-type').value;
-    const startDateContainer = document.getElementById('start-date-container');
-    const endDateContainer = document.getElementById('end-date-container');
-    const datetimeContainer = document.getElementById('datetime-container');
-    
-    // Hide all containers first
-    startDateContainer.classList.add('d-none');
-    endDateContainer.classList.add('d-none');
-    datetimeContainer.classList.add('d-none');
-    
-    // Show appropriate containers based on filter type
-    if (filterType === 'range') {
-        startDateContainer.classList.remove('d-none');
-        endDateContainer.classList.remove('d-none');
-        document.querySelector('#start-date-container label').textContent = 'Tanggal Mulai';
-        document.querySelector('#end-date-container label').textContent = 'Tanggal Akhir';
-    } else if (filterType === 'day') {
-        startDateContainer.classList.remove('d-none');
-        document.querySelector('#start-date-container label').textContent = 'Pilih Tanggal';
-    } else if (filterType === 'hour') {
-        datetimeContainer.classList.remove('d-none');
-        document.querySelector('#datetime-container label').textContent = 'Pilih Jam (Data per Jam)';
-    } else if (filterType === 'minute') {
-        datetimeContainer.classList.remove('d-none');
-        document.querySelector('#datetime-container label').textContent = 'Pilih Waktu (Data per Menit)';
-    }
-}
-
-// Initialize history when DOM is loaded
+// Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.iotHistory = new IoTHistory();
+    window.iotDashboard = new IoTDashboard();
 });

@@ -77,9 +77,12 @@ try {
         $temperature = null; // Invalid temperature
     }
 
+    // Get current server time for timestamp
+    $currentTimestamp = date('Y-m-d H:i:s');
+
     // Prepare buffer data
     $bufferData = [
-        'timestamp' => date('Y-m-d H:i:s'),
+        'timestamp' => $currentTimestamp, // Use current server time
         'device_id' => $deviceId,
         'device_name' => $deviceName,
         'device_location' => $deviceLocation,
@@ -120,7 +123,7 @@ try {
         
         $statusStmt->execute([
             $deviceId,
-            $bufferData['timestamp'],
+            $currentTimestamp, // Use current server time for last_seen
             $bufferData['wifi_signal'],
             $bufferData['free_heap'],
             $bufferData['firmware_version']
