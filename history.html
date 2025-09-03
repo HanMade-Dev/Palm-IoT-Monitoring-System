@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -33,9 +32,14 @@
                             <i class="fas fa-history"></i> History
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="analysis.html">
+                            <i class="fas fa-flask"></i> Analysis
+                        </a>
+                    </li>
                 </ul>
                 <div class="d-flex align-items-center">
-                    <small class="text-light">History Data Analysis</small>
+                    <small class="text-light">History Data</small>
                 </div>
             </div>
         </div>
@@ -43,55 +47,6 @@
 
     <!-- Main Content -->
     <div class="container-fluid" style="margin-top: 80px;">
-        <!-- Analytics Summary -->
-        <div class="row mb-4" id="analytics-container">
-            <!-- Analytics cards will be populated here -->
-        </div>
-
-        <!-- Charts Section -->
-        <div class="row mb-4">
-            <div class="col-lg-6 mb-3">
-                <div class="card chart-card" onclick="showChartPopup('distance')">
-                    <div class="card-header bg-primary text-white">
-                        <h6 class="mb-0"><i class="fas fa-water"></i> Jarak Air (cm)</h6>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="distanceChart" height="200"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-6 mb-3">
-                <div class="card chart-card" onclick="showChartPopup('moisture')">
-                    <div class="card-header bg-success text-white">
-                        <h6 class="mb-0"><i class="fas fa-tint"></i> Kelembaban Tanah (%)</h6>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="moistureChart" height="200"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-6 mb-3">
-                <div class="card chart-card" onclick="showChartPopup('temperature')">
-                    <div class="card-header bg-warning text-white">
-                        <h6 class="mb-0"><i class="fas fa-thermometer-half"></i> Suhu Udara (°C)</h6>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="temperatureChart" height="200"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-6 mb-3">
-                <div class="card chart-card" onclick="showChartPopup('rain')">
-                    <div class="card-header bg-info text-white">
-                        <h6 class="mb-0"><i class="fas fa-cloud-rain"></i> Curah Hujan (%)</h6>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="rainChart" height="200"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Data Filters -->
         <div class="row mb-3">
             <div class="col-12">
@@ -101,13 +56,13 @@
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            <div class="col-md-2">
+                            <div class="col-md-3">
                                 <label for="deviceFilter" class="form-label">Device</label>
                                 <select class="form-select" id="deviceFilter">
                                     <option value="">All Devices</option>
                                 </select>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-3">
                                 <label for="sensorFilter" class="form-label">Sensor</label>
                                 <select class="form-select" id="sensorFilter">
                                     <option value="">All Sensors</option>
@@ -134,8 +89,8 @@
                                     <option value="200">200</option>
                                 </select>
                             </div>
-                            <div class="col-md-2 d-flex align-items-end">
-                                <button class="btn btn-primary w-100" onclick="loadHistoryData()">
+                            <div class="col-12 d-flex justify-content-end">
+                                <button class="btn btn-primary" onclick="loadHistoryData()">
                                     <i class="fas fa-search"></i> Filter Data
                                 </button>
                             </div>
@@ -208,23 +163,6 @@
                             </ul>
                         </nav>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Chart Detail Modal -->
-    <div class="modal fade" id="chartDetailModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="chartModalTitle">
-                        <i id="chartModalIcon"></i> Chart Detail
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <canvas id="chartDetailCanvas" height="400"></canvas>
                 </div>
             </div>
         </div>
