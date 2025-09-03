@@ -6,6 +6,8 @@ class IoTDashboard {
         this.devices = [];
         this.detailCharts = {}; // To store Chart.js instances for the detail modal
         this.refreshInterval = null;
+        this.detailRefreshInterval = null;
+        this.currentDetailDeviceId = null;
         this.lastUpdateElement = document.getElementById('last-update');
         this.connectionStatusElement = document.getElementById('connection-status');
         this.manageDeviceModal = new bootstrap.Modal(document.getElementById('manageDeviceModal'));
@@ -277,6 +279,19 @@ class IoTDashboard {
             return;
         }
 
+        this.currentDetailDeviceId = deviceId;
+        this.updateDeviceDetailData(device);
+
+        // Fetch historical data for the charts in the modal
+        await this.loadAndRenderDetailCharts(deviceId, device.is_online);
+
+        this.deviceDetailModal.show();
+        
+        // Start real-time updates for detail modal
+        this.startDetailRealTimeUpdate();
+    }
+
+    updateDeviceDetailData(device) {
         // Populate modal with device data
         document.getElementById('modal-device-id').textContent = device.device_id;
         document.getElementById('modal-device-name').textContent = device.device_name;
@@ -307,11 +322,40 @@ class IoTDashboard {
             document.getElementById('modal-rain-value').textContent = device.rain_percentage !== null ? `${device.rain_percentage}%` : '--%';
             document.getElementById('modal-rain-status').textContent = device.rain_status || 'Unknown';
         }
+    }
 
-        // Fetch historical data for the charts in the modal
-        await this.loadAndRenderDetailCharts(deviceId, device.is_online);
+    startDetailRealTimeUpdate() {
+        // Stop any existing detail interval
+        if (this.detailRefreshInterval) {
+            clearInterval(this.detailRefreshInterval);
+        }
 
-        this.deviceDetailModal.show();
+        // Update detail modal every 3 seconds
+        this.detailRefreshInterval = setInterval(async () => {
+            if (this.currentDetailDeviceId) {
+                try {
+                    const response = await fetch(`${this.apiBaseUrl}live.php`);
+                    const liveData = await response.json();
+                    
+                    if (liveData.success) {
+                        const deviceLiveData = liveData.data.find(d => d.device_id === this.currentDetailDeviceId);
+                        if (deviceLiveData) {
+                            this.updateDeviceDetailData(deviceLiveData);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error updating detail data:', error);
+                }
+            }
+        }, 3000);
+    }
+
+    stopDetailRealTimeUpdate() {
+        if (this.detailRefreshInterval) {
+            clearInterval(this.detailRefreshInterval);
+            this.detailRefreshInterval = null;
+        }
+        this.currentDetailDeviceId = null;
     }
 
     async loadAndRenderDetailCharts(deviceId, isOnline) {
@@ -710,6 +754,11 @@ class IoTDashboard {
         document.getElementById('manageDeviceModal').addEventListener('show.bs.modal', () => {
             // Stop auto-refresh when modal is open to prevent conflicts
             this.stopAutoRefresh();
+        });
+
+        // Event listener for when the device detail modal is hidden
+        document.getElementById('deviceDetailModal').addEventListener('hidden.bs.modal', () => {
+            this.stopDetailRealTimeUpdate();
         });
 
         // Event listener for when the add device tab is shown

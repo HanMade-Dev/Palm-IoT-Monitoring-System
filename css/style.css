@@ -13,6 +13,89 @@
 body {
     background-color: #f5f5f5;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* TopNavbar */
+.top-navbar {
+    position: fixed;
+    top: 0;
+    left: 0; /* Adjusted to cover the full width */
+    right: 0;
+    height: 70px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    z-index: 1040;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.navbar-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    height: 100%;
+}
+
+.mobile-toggle {
+    display: none; /* This will be handled by responsive adjustments */
+    background: none;
+    border: none;
+    color: #495057;
+    font-size: 1.2rem;
+    padding: 0.5rem;
+}
+
+.navbar-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Main Content */
+.main-content {
+    margin-top: 70px;
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    min-height: calc(100vh - 70px);
+    padding: 1.5rem;
+}
+
+/* Dashboard Controls */
+.dashboard-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.dashboard-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.dashboard-btn:hover {
+    transform: translateY(-1px);
+}
+
+.dashboard-btn i {
+    min-width: 16px;
 }
 
 /* Hero Section */
@@ -214,8 +297,8 @@ body {
     transition: all 0.3s ease;
     cursor: pointer;
     height: 100%;
-    display: flex; /* Added for better layout */
-    flex-direction: column; /* Added for better layout */
+    display: flex;
+    flex-direction: column;
 }
 
 .device-card:hover {
@@ -331,7 +414,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-grow: 1; /* Allow chart to take available space */
+    flex-grow: 1;
 }
 
 /* Analytics Styles */
@@ -463,11 +546,49 @@ canvas {
     font-size: 0.875rem;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+    color: #000000 !important;
+    background-color: #f8f9fa !important;
 }
 
 .table td {
     vertical-align: middle;
     border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Sortable Table Headers */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
+    position: relative;
+}
+
+.sortable-header:hover {
+    background-color: #e9ecef !important;
+}
+
+.sort-icon {
+    margin-left: 0.5rem;
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+    font-size: 0.8rem;
+}
+
+.sortable-header:hover .sort-icon {
+    opacity: 1;
+}
+
+.sortable-header.sort-default .sort-icon,
+.sortable-header .sort-icon {
+    opacity: 0.5;
+}
+
+.sortable-header.sort-asc .sort-icon {
+    opacity: 1;
+}
+
+.sortable-header.sort-desc .sort-icon {
+    opacity: 1;
 }
 
 /* Alerts */
@@ -549,21 +670,59 @@ canvas {
 /* Analytics Cards */
 .analytics-card {
     border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 15px;
-    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
     height: 100%;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    transition: all 0.3s ease;
+    border-left: 4px solid;
+}
+
+.analytics-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.analytics-card.card-primary {
+    border-left-color: #0d6efd;
+}
+
+.analytics-card.card-success {
+    border-left-color: #198754;
+}
+
+.analytics-card.card-warning {
+    border-left-color: #ffc107;
+}
+
+.analytics-card.card-info {
+    border-left-color: #0dcaf0;
 }
 
 .analytics-header {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 16px;
     margin-bottom: 15px;
     color: #495057;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.analytics-header i {
+    font-size: 18px;
 }
 
 .analytics-item {
-    margin-bottom: 8px;
+    margin-bottom: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.analytics-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .analytics-label {
@@ -571,52 +730,30 @@ canvas {
     color: #6c757d;
     font-weight: 500;
     margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .analytics-value {
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     line-height: 1.2;
+    color: #212529;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-    .hero-section {
-        min-height: 60vh;
-        text-align: center;
-    }
-
-    .sensor-card {
-        flex-direction: column;
-        text-align: center;
-    }
-
-    .sensor-icon {
-        margin-bottom: 1rem;
-    }
-
-    .sensor-value {
-        font-size: 1.5rem;
-    }
+/* Chart Cards Styling */
+.chart-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
 }
 
-@media (max-width: 576px) {
-    .container-fluid {
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
+.chart-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
 
-    .card-body {
-        padding: 1rem;
-    }
-
-    .sensor-card {
-        padding: 1rem;
-    }
-
-    .table-responsive {
-        font-size: 0.875rem;
-    }
+.chart-card .card-header {
+    border-radius: 15px 15px 0 0 !important;
 }
 
 body {
@@ -642,9 +779,83 @@ body {
 .table th {
     border-color: #dee2e6 !important;
     background-color: #f8f9fa !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
 }
 
 .table td {
     border-color: #dee2e6 !important;
     background-color: white !important;
+}
+
+/* Responsive Design */
+@media (max-width: 992px) {
+    .mobile-toggle {
+        display: block;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero-section {
+        min-height: 60vh;
+        text-align: center;
+    }
+
+    .sensor-card {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .sensor-icon {
+        margin-bottom: 1rem;
+    }
+
+    .sensor-value {
+        font-size: 1.5rem;
+    }
+
+    /* Mobile Dashboard Button Styles */
+    .dashboard-btn .btn-label {
+        display: none;
+    }
+
+    .dashboard-btn {
+        padding: 0.5rem;
+        min-width: 40px;
+        justify-content: center;
+    }
+
+    .dashboard-btn i {
+        margin: 0;
+    }
+
+    .dashboard-buttons {
+        justify-content: flex-end;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .dashboard-buttons .btn-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .container-fluid {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .card-body {
+        padding: 1rem;
+    }
+
+    .sensor-card {
+        padding: 1rem;
+    }
+
+    .table-responsive {
+        font-size: 0.875rem;
+    }
 }

@@ -1,537 +1,684 @@
-// History JavaScript for IoT Monitoring System
 
-class IoTHistory {
-    constructor() {
-        this.apiBaseUrl = 'api/';
-        this.currentPage = 1;
-        this.recordsPerPage = 50;
-        this.totalRecords = 0;
-        this.charts = {}; // Object to hold multiple chart instances
-        this.devices = [];
-        
-        this.init();
-    }
+// History page JavaScript for IoT Monitoring System
 
-    init() {
-        this.setupCharts(); // Setup all four charts
-        this.setupDateDefaults(); // Set default date inputs
-        this.loadDevices();
-        this.loadHistoryData(); // Initial load without specific filters
-        this.setupEventListeners();
-        updateDateTimeInputs(); // Call once to set initial visibility
-    }
+let currentData = [];
+let filteredData = [];
+let charts = {};
+let chartDetailModal;
+let currentPage = 1;
+let rowsPerPage = 50;
+let sortColumn = '';
+let sortDirection = '';
 
-    setupCharts() {
-        // Chart for Distance
-        this.charts.distance = new Chart(document.getElementById('chartDistance').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Jarak Air (cm)', data: [], borderColor: '#0dcaf0', backgroundColor: 'rgba(13, 202, 240, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Jarak Air (cm)', 'cm', 0, 100)
-        });
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    chartDetailModal = new bootstrap.Modal(document.getElementById('chartDetailModal'));
+    loadDeviceOptions();
+    setDefaultDates();
+    loadHistoryData();
+});
 
-        // Chart for Soil Moisture
-        this.charts.moisture = new Chart(document.getElementById('chartMoisture').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Kelembaban Tanah (%)', data: [], borderColor: '#198754', backgroundColor: 'rgba(25, 135, 84, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Kelembaban Tanah (%)', '%', 0, 100)
-        });
-
-        // Chart for Temperature
-        this.charts.temperature = new Chart(document.getElementById('chartTemperature').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Suhu Udara (캜)', data: [], borderColor: '#ffc107', backgroundColor: 'rgba(255, 193, 7, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Suhu Udara (캜)', '캜', 0, 50)
-        });
-
-        // Chart for Rain
-        this.charts.rain = new Chart(document.getElementById('chartRain').getContext('2d'), {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Hujan (%)', data: [], borderColor: '#6f42c1', backgroundColor: 'rgba(111, 66, 193, 0.1)', fill: true, tension: 0.4 }] },
-            options: this.getChartOptions('Hujan (%)', '%', 0, 100)
-        });
-    }
-
-    getChartOptions(titleText, unit, min, max) {
-        return {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
-            plugins: {
-                legend: { display: false }, // Hide legend as each chart is for one sensor
-                title: {
-                    display: true,
-                    text: titleText,
-                    font: { size: 14, weight: 'bold' }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `${context.dataset.label}: ${context.parsed.y} ${unit}`;
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    display: true,
-                    title: {
-                        display: true,
-                        text: 'Waktu'
-                    }
-                },
-                y: {
-                    type: 'linear',
-                    display: true,
-                    position: 'left',
-                    title: {
-                        display: true,
-                        text: `${titleText.split('(')[0].trim()} (${unit})`
-                    },
-                    min: min,
-                    max: max
-                }
-            }
-        };
-    }
-
-    setupDateDefaults() {
-        // Set filter type to 'none' for default all data
-        document.getElementById('filter-type').value = 'none'; 
-        document.getElementById('start-date').value = ''; 
-        document.getElementById('end-date').value = ''; 
-        
-        // Set default datetime for minute/hour filters to current time
-        const now = new Date();
-        const datetimeString = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:MM
-        document.getElementById('datetime-input').value = datetimeString;
-    }
-
-    async loadDevices() {
-        try {
-            const response = await fetch(`${this.apiBaseUrl}get_devices.php`);
-            const data = await response.json();
-            
-            if (data.success) {
-                this.devices = data.data;
-                this.updateDeviceSelector();
-            } else {
-                console.error('Failed to load devices for history filter:', data.message);
-            }
-        } catch (error) {
-            console.error('Error loading devices for history filter:', error);
-        }
-    }
+function setDefaultDates() {
+    const today = new Date();
+    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     
-    updateDeviceSelector() {
-        const deviceSelect = document.getElementById('device-select-history');
-        deviceSelect.innerHTML = '<option value="all">Semua Device</option>';
-        
-        this.devices.forEach(device => {
-            const option = document.createElement('option');
-            option.value = device.device_id;
-            option.textContent = `${device.device_name} (${device.location})`;
-            deviceSelect.appendChild(option);
-        });
-    }
+    document.getElementById('endDate').value = today.toISOString().split('T')[0];
+    document.getElementById('startDate').value = lastWeek.toISOString().split('T')[0];
+}
 
-    async loadHistoryData(page = 1) {
-        try {
-            this.showLoading();
+async function loadDeviceOptions() {
+    try {
+        const response = await fetch('api/get_devices.php');
+        const data = await response.json();
+        
+        if (data.success) {
+            const deviceFilter = document.getElementById('deviceFilter');
+            deviceFilter.innerHTML = '<option value="">All Devices</option>';
             
-            const filterType = document.getElementById('filter-type').value;
-            const deviceId = document.getElementById('device-select-history').value;
-            const params = new URLSearchParams({
-                page: page,
-                limit: this.recordsPerPage,
-                // sensor_type is no longer needed for chart visibility as charts are separate
+            data.data.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.device_id;
+                option.textContent = `${device.device_name} (${device.device_id})`;
+                deviceFilter.appendChild(option);
             });
-            
-            // Add device filter
-            if (deviceId !== 'all') {
-                params.append('device_id', deviceId);
-            }
-
-            // Add date/time parameters based on filter type, ONLY if they have values
-            if (filterType === 'range') {
-                const startDate = document.getElementById('start-date').value;
-                const endDate = document.getElementById('end-date').value;
-                if (startDate) params.append('start_date', startDate);
-                if (endDate) params.append('end_date', endDate);
-                params.append('filter_type', filterType);
-            } else if (filterType === 'day') {
-                const selectedDate = document.getElementById('start-date').value; // Re-using start-date for single day
-                if (selectedDate) params.append('target_date', selectedDate);
-                params.append('filter_type', filterType);
-            } else if (filterType === 'hour' || filterType === 'minute') {
-                const datetimeValue = document.getElementById('datetime-input').value;
-                if (datetimeValue) {
-                    params.append('target_datetime', datetimeValue);
-                    params.append('time_granularity', filterType);
-                }
-                params.append('filter_type', filterType);
-            } else { // filterType === 'none' or default
-                params.append('filter_type', 'none'); // Explicitly tell backend no date filter
-            }
-
-            const response = await fetch(`${this.apiBaseUrl}get_history.php?${params}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                this.updateTable(data.data);
-                this.updateAllCharts(data.data); // Update all four charts
-                this.updateAnalytics(data.data); // Updated to show min/max/avg
-                this.updatePagination(data.pagination);
-                this.totalRecords = data.pagination.total;
-                this.currentPage = page;
-                
-                document.getElementById('total-records').textContent = 
-                    `${data.pagination.total} records`;
-            } else {
-                throw new Error(data.message || 'Failed to load history data');
-            }
-        } catch (error) {
-            console.error('Error loading history data:', error);
-            this.showError('Gagal memuat data historis. Silakan coba lagi.');
         }
-    }
-
-    updateTable(data) {
-        const tbody = document.getElementById('data-table-body');
-        
-        if (!data || data.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="text-center text-muted">
-                        Tidak ada data untuk periode yang dipilih
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        const rows = data.map(row => {
-            // Use device_name and location directly from row if available (from buffer)
-            // Otherwise, find from this.devices (from DB)
-            const deviceName = row.device_name || (this.devices.find(d => d.device_id === row.device_id)?.device_name || row.device_id);
-            const location = row.location || (this.devices.find(d => d.device_id === row.device_id)?.location || '-');
-
-            const datetime = new Date(row.timestamp).toLocaleString('id-ID');
-            const distance = row.distance !== null ? `${row.distance} cm` : '-';
-            const moisture = row.soil_moisture !== null ? `${row.soil_moisture}%` : '-';
-            const temperature = row.temperature !== null ? `${parseFloat(row.temperature).toFixed(1)}캜` : '-';
-            const rain = row.rain_percentage !== null ? `${row.rain_percentage}%` : '-';
-            const status = this.getOverallStatus(row);
-            
-            return `
-                <tr>
-                    <td class="text-dark">${deviceName}</td>
-                    <td class="text-dark">${datetime}</td>
-                    <td class="text-dark">${distance}</td>
-                    <td class="text-dark">${moisture}</td>
-                    <td class="text-dark">${temperature}</td>
-                    <td class="text-dark">${rain}</td>
-                    <td><span class="badge ${status.class}">${status.text}</span></td>
-                </tr>
-            `;
-        }).join('');
-
-        tbody.innerHTML = rows;
-    }
-
-    updateAllCharts(data) {
-        if (!data || data.length === 0) {
-            Object.values(this.charts).forEach(chart => {
-                chart.data.labels = [];
-                chart.data.datasets.forEach(dataset => { dataset.data = []; });
-                chart.update();
-            });
-            return;
-        }
-
-        // Sort data by timestamp ascending for chart
-        const sortedData = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        // Limit data points for better performance on chart
-        const maxPoints = 200; // Max points to display on chart
-        const step = Math.max(1, Math.floor(sortedData.length / maxPoints));
-        const filteredData = sortedData.filter((_, index) => index % step === 0);
-
-        const labels = filteredData.map(row => {
-            const date = new Date(row.timestamp);
-            return date.toLocaleDateString('id-ID') + ' ' + 
-                   date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        });
-
-        // Update Distance Chart
-        this.charts.distance.data.labels = labels;
-        this.charts.distance.data.datasets[0].data = filteredData.map(row => row.distance);
-        this.charts.distance.update();
-
-        // Update Moisture Chart
-        this.charts.moisture.data.labels = labels;
-        this.charts.moisture.data.datasets[0].data = filteredData.map(row => row.soil_moisture);
-        this.charts.moisture.update();
-
-        // Update Temperature Chart
-        this.charts.temperature.data.labels = labels;
-        this.charts.temperature.data.datasets[0].data = filteredData.map(row => row.temperature);
-        this.charts.temperature.update();
-
-        // Update Rain Chart
-        this.charts.rain.data.labels = labels;
-        this.charts.rain.data.datasets[0].data = filteredData.map(row => row.rain_percentage);
-        this.charts.rain.update();
-    }
-
-    updateAnalytics(data) {
-        // Helper function to calculate min, max, avg for a given array of numbers
-        const calculateStats = (arr) => {
-            const validNumbers = arr.filter(val => val !== null && val !== undefined && !isNaN(val));
-            if (validNumbers.length === 0) {
-                return { min: '--', max: '--', avg: '--' };
-            }
-            const min = Math.min(...validNumbers);
-            const max = Math.max(...validNumbers);
-            const avg = validNumbers.reduce((sum, val) => sum + val, 0) / validNumbers.length;
-            return { min, max, avg };
-        };
-
-        // Extract data for each sensor
-        const distances = data.map(row => row.distance);
-        const moistures = data.map(row => row.soil_moisture);
-        const temperatures = data.map(row => row.temperature);
-        const rains = data.map(row => row.rain_percentage);
-
-        // Calculate stats
-        const distStats = calculateStats(distances);
-        const moistStats = calculateStats(moistures);
-        const tempStats = calculateStats(temperatures);
-        const rainStats = calculateStats(rains);
-
-        // Update HTML elements for Distance
-        document.getElementById('distance-min').textContent = distStats.min !== '--' ? `${distStats.min} cm` : '--';
-        document.getElementById('distance-max').textContent = distStats.max !== '--' ? `${distStats.max} cm` : '--';
-        document.getElementById('distance-avg').textContent = distStats.avg !== '--' ? `${distStats.avg.toFixed(1)} cm` : '--';
-
-        // Update HTML elements for Soil Moisture
-        document.getElementById('moisture-min').textContent = moistStats.min !== '--' ? `${moistStats.min}%` : '--';
-        document.getElementById('moisture-max').textContent = moistStats.max !== '--' ? `${moistStats.max}%` : '--';
-        document.getElementById('moisture-avg').textContent = moistStats.avg !== '--' ? `${moistStats.avg.toFixed(1)}%` : '--';
-
-        // Update HTML elements for Temperature
-        document.getElementById('temperature-min').textContent = tempStats.min !== '--' ? `${tempStats.min.toFixed(1)}캜` : '--';
-        document.getElementById('temperature-max').textContent = tempStats.max !== '--' ? `${tempStats.max.toFixed(1)}캜` : '--';
-        document.getElementById('temperature-avg').textContent = tempStats.avg !== '--' ? `${tempStats.avg.toFixed(1)}캜` : '--';
-
-        // Update HTML elements for Rain
-        document.getElementById('rain-min').textContent = rainStats.min !== '--' ? `${rainStats.min}%` : '--';
-        document.getElementById('rain-max').textContent = rainStats.max !== '--' ? `${rainStats.max}%` : '--';
-        document.getElementById('rain-avg').textContent = rainStats.avg !== '--' ? `${rainStats.avg.toFixed(1)}%` : '--';
-    }
-
-
-    updatePagination(pagination) {
-        const paginationContainer = document.getElementById('pagination');
-        
-        if (pagination.total_pages <= 1) {
-            paginationContainer.innerHTML = '';
-            return;
-        }
-
-        let paginationHtml = '';
-        
-        // Previous button
-        if (pagination.current_page > 1) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.current_page - 1})">
-                        <i class="fas fa-chevron-left"></i>
-                    </a>
-                </li>
-            `;
-        }
-
-        // Page numbers
-        const startPage = Math.max(1, pagination.current_page - 2);
-        const endPage = Math.min(pagination.total_pages, pagination.current_page + 2);
-
-        if (startPage > 1) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(1)">1</a>
-                </li>
-            `;
-            if (startPage > 2) {
-                paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
-            }
-        }
-
-        for (let i = startPage; i <= endPage; i++) {
-            const activeClass = i === pagination.current_page ? 'active' : '';
-            paginationHtml += `
-                <li class="page-item ${activeClass}">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${i})">${i}</a>
-                </li>
-            `;
-        }
-
-        if (endPage < pagination.total_pages) {
-            if (endPage < pagination.total_pages - 1) {
-                paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
-            }
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.total_pages})">
-                        ${pagination.total_pages}
-                    </a>
-                </li>
-            `;
-        }
-
-        // Next button
-        if (pagination.current_page < pagination.total_pages) {
-            paginationHtml += `
-                <li class="page-item">
-                    <a class="page-link" href="#" onclick="window.iotHistory.loadHistoryData(${pagination.current_page + 1})">
-                        <i class="fas fa-chevron-right"></i>
-                    </a>
-                </li>
-            `;
-        }
-
-        paginationContainer.innerHTML = paginationHtml;
-    }
-
-    getOverallStatus(row) {
-        const alerts = [];
-        
-        // Check each sensor for alerts based on common thresholds
-        if (row.distance !== null && row.distance < 20) alerts.push('water-high'); // Example: water too high
-        if (row.soil_moisture !== null && row.soil_moisture < 30) alerts.push('dry-soil'); // Example: soil too dry
-        if (row.temperature !== null && row.temperature > 35) alerts.push('hot'); // Example: temp too high
-        if (row.rain_percentage !== null && row.rain_percentage > 50) alerts.push('rain'); // Example: raining heavily
-
-        if (alerts.length === 0) {
-            return { class: 'bg-success', text: 'Normal' };
-        } else if (alerts.some(alert => ['water-high', 'hot'].includes(alert))) {
-            return { class: 'bg-danger', text: 'Critical' };
-        } else {
-            return { class: 'bg-warning text-dark', text: 'Warning' };
-        }
-    }
-
-    showLoading() {
-        const tbody = document.getElementById('data-table-body');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center">
-                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div> Loading data...
-                </td>
-            </tr>
-        `;
-    }
-
-    showError(message) {
-        const tbody = document.getElementById('data-table-body');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center text-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>${message}
-                </td>
-            </tr>
-        `;
-    }
-
-    setupEventListeners() {
-        // Make loadHistoryData available globally for pagination
-        // window.history = this; // Changed to window.iotHistory to avoid conflict
-
-        // Attach event listener to filter button
-        document.querySelector('.btn-primary[onclick="applyFilter()"]').addEventListener('click', () => this.loadHistoryData(1));
+    } catch (error) {
+        console.error('Error loading device options:', error);
     }
 }
 
-// Global functions for HTML onclick events
-function applyFilter() {
-    if (window.iotHistory) { // Changed from window.history
-        window.iotHistory.loadHistoryData(1);
+async function loadHistoryData() {
+    try {
+        // Show loading state
+        document.getElementById('historyTableBody').innerHTML = '<tr><td colspan="7" class="text-center">Loading data...</td></tr>';
+        document.getElementById('analytics-container').innerHTML = '<div class="col-12 text-center">Loading analytics...</div>';
+
+        // Build query parameters
+        const params = new URLSearchParams();
+        const deviceId = document.getElementById('deviceFilter').value;
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        
+        if (deviceId) params.append('device_id', deviceId);
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        
+        const response = await fetch(`api/get_history.php?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            currentData = data.data;
+            applyFilters();
+            renderAnalytics(currentData);
+            renderCharts(currentData);
+        } else {
+            throw new Error(data.message || 'Failed to load history data');
+        }
+    } catch (error) {
+        console.error('Error loading history data:', error);
+        document.getElementById('historyTableBody').innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${error.message}</td></tr>`;
+        document.getElementById('analytics-container').innerHTML = `<div class="col-12"><div class="alert alert-danger">Error loading data: ${error.message}</div></div>`;
     }
+}
+
+function applyFilters() {
+    const sensorFilter = document.getElementById('sensorFilter').value;
+    rowsPerPage = parseInt(document.getElementById('rowsPerPage').value);
+    
+    if (!sensorFilter) {
+        filteredData = [...currentData];
+    } else {
+        filteredData = currentData.filter(row => {
+            switch(sensorFilter) {
+                case 'distance': return row.distance !== null;
+                case 'moisture': return row.soil_moisture !== null;
+                case 'temperature': return row.temperature !== null;
+                case 'rain': return row.rain_percentage !== null;
+                default: return true;
+            }
+        });
+    }
+    
+    // Apply sorting if any
+    if (sortColumn && sortDirection) {
+        applySorting();
+    }
+    
+    currentPage = 1;
+    renderHistoryTable();
+}
+
+function sortTable(column) {
+    // Reset other headers
+    document.querySelectorAll('.sortable-header').forEach(header => {
+        if (header.dataset.column !== column) {
+            header.classList.remove('sort-asc', 'sort-desc', 'sort-default');
+            header.querySelector('.sort-icon').className = 'fas fa-sort sort-icon';
+        }
+    });
+
+    const header = document.querySelector(`[data-column="${column}"]`);
+    const icon = header.querySelector('.sort-icon');
+    
+    if (sortColumn === column) {
+        // Cycle through: default -> asc -> desc -> default
+        if (sortDirection === '') {
+            // Default to ascending
+            sortDirection = 'asc';
+            header.classList.remove('sort-default', 'sort-desc');
+            header.classList.add('sort-asc');
+            icon.className = 'fas fa-sort-up sort-icon';
+        } else if (sortDirection === 'asc') {
+            // Ascending to descending
+            sortDirection = 'desc';
+            header.classList.remove('sort-asc', 'sort-default');
+            header.classList.add('sort-desc');
+            icon.className = 'fas fa-sort-down sort-icon';
+        } else {
+            // Descending back to default (no sort)
+            sortDirection = '';
+            sortColumn = '';
+            header.classList.remove('sort-asc', 'sort-desc');
+            header.classList.add('sort-default');
+            icon.className = 'fas fa-sort sort-icon';
+            
+            // Reset to original data order without sorting
+            filteredData = [...currentData];
+            const sensorFilter = document.getElementById('sensorFilter').value;
+            if (sensorFilter) {
+                filteredData = currentData.filter(row => {
+                    switch(sensorFilter) {
+                        case 'distance': return row.distance !== null;
+                        case 'moisture': return row.soil_moisture !== null;
+                        case 'temperature': return row.temperature !== null;
+                        case 'rain': return row.rain_percentage !== null;
+                        default: return true;
+                    }
+                });
+            }
+            currentPage = 1;
+            renderHistoryTable();
+            return;
+        }
+    } else {
+        // New column - start with ascending
+        sortColumn = column;
+        sortDirection = 'asc';
+        header.classList.remove('sort-default', 'sort-desc');
+        header.classList.add('sort-asc');
+        icon.className = 'fas fa-sort-up sort-icon';
+    }
+    
+    applySorting();
+    currentPage = 1;
+    renderHistoryTable();
+}
+
+function applySorting() {
+    filteredData.sort((a, b) => {
+        let valueA, valueB;
+        
+        switch(sortColumn) {
+            case 'timestamp':
+                valueA = new Date(a.timestamp);
+                valueB = new Date(b.timestamp);
+                break;
+            case 'device':
+                valueA = (a.device_name || a.device_id).toLowerCase();
+                valueB = (b.device_name || b.device_id).toLowerCase();
+                break;
+            case 'location':
+                valueA = (a.location || '').toLowerCase();
+                valueB = (b.location || '').toLowerCase();
+                break;
+            case 'distance':
+                valueA = parseFloat(a.distance) || 0;
+                valueB = parseFloat(b.distance) || 0;
+                break;
+            case 'moisture':
+                valueA = parseFloat(a.soil_moisture) || 0;
+                valueB = parseFloat(b.soil_moisture) || 0;
+                break;
+            case 'temperature':
+                valueA = parseFloat(a.temperature) || 0;
+                valueB = parseFloat(b.temperature) || 0;
+                break;
+            case 'rain':
+                valueA = parseFloat(a.rain_percentage) || 0;
+                valueB = parseFloat(b.rain_percentage) || 0;
+                break;
+            default:
+                return 0;
+        }
+        
+        if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
+        if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function renderAnalytics(data) {
+    const container = document.getElementById('analytics-container');
+    
+    if (data.length === 0) {
+        container.innerHTML = '<div class="col-12"><div class="alert alert-warning text-center">No data available for the selected filters.</div></div>';
+        return;
+    }
+
+    // Calculate analytics
+    const analytics = calculateAnalytics(data);
+    
+    container.innerHTML = `
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="analytics-card card-primary">
+                <div class="analytics-header">
+                    <i class="fas fa-water text-primary"></i>
+                    Jarak Air
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Average</div>
+                    <div class="analytics-value text-primary">${analytics.avgDistance} cm</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Min / Max</div>
+                    <div class="analytics-value text-primary">${analytics.minDistance} cm / ${analytics.maxDistance} cm</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="analytics-card card-success">
+                <div class="analytics-header">
+                    <i class="fas fa-tint text-success"></i>
+                    Soil Moisture
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Average</div>
+                    <div class="analytics-value text-success">${analytics.avgMoisture}%</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Min / Max</div>
+                    <div class="analytics-value text-success">${analytics.minMoisture}% / ${analytics.maxMoisture}%</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="analytics-card card-warning">
+                <div class="analytics-header">
+                    <i class="fas fa-thermometer-half text-warning"></i>
+                    Temperature
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Average</div>
+                    <div class="analytics-value text-warning">${analytics.avgTemperature}째C</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Min / Max</div>
+                    <div class="analytics-value text-warning">${analytics.minTemperature}째C / ${analytics.maxTemperature}째C</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="analytics-card card-info">
+                <div class="analytics-header">
+                    <i class="fas fa-cloud-rain text-info"></i>
+                    Rain Data
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Average</div>
+                    <div class="analytics-value text-info">${analytics.avgRain}%</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Max Detected</div>
+                    <div class="analytics-value text-info">${analytics.maxRain}%</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function calculateAnalytics(data) {
+    if (data.length === 0) {
+        return {
+            totalRecords: 0,
+            avgDistance: 0,
+            minDistance: 0,
+            maxDistance: 0,
+            avgMoisture: 0,
+            minMoisture: 0,
+            maxMoisture: 0,
+            avgTemperature: 0,
+            minTemperature: 0,
+            maxTemperature: 0,
+            avgRain: 0,
+            maxRain: 0
+        };
+    }
+
+    const distanceValues = data.map(d => parseFloat(d.distance)).filter(v => !isNaN(v));
+    const moistureValues = data.map(d => parseFloat(d.soil_moisture)).filter(v => !isNaN(v));
+    const temperatureValues = data.map(d => parseFloat(d.temperature)).filter(v => !isNaN(v));
+    const rainValues = data.map(d => parseFloat(d.rain_percentage)).filter(v => !isNaN(v));
+
+    return {
+        totalRecords: data.length,
+        avgDistance: distanceValues.length > 0 ? (distanceValues.reduce((a, b) => a + b, 0) / distanceValues.length).toFixed(1) : 0,
+        minDistance: distanceValues.length > 0 ? Math.min(...distanceValues).toFixed(1) : 0,
+        maxDistance: distanceValues.length > 0 ? Math.max(...distanceValues).toFixed(1) : 0,
+        avgMoisture: moistureValues.length > 0 ? (moistureValues.reduce((a, b) => a + b, 0) / moistureValues.length).toFixed(1) : 0,
+        minMoisture: moistureValues.length > 0 ? Math.min(...moistureValues).toFixed(1) : 0,
+        maxMoisture: moistureValues.length > 0 ? Math.max(...moistureValues).toFixed(1) : 0,
+        avgTemperature: temperatureValues.length > 0 ? (temperatureValues.reduce((a, b) => a + b, 0) / temperatureValues.length).toFixed(1) : 0,
+        minTemperature: temperatureValues.length > 0 ? Math.min(...temperatureValues).toFixed(1) : 0,
+        maxTemperature: temperatureValues.length > 0 ? Math.max(...temperatureValues).toFixed(1) : 0,
+        avgRain: rainValues.length > 0 ? (rainValues.reduce((a, b) => a + b, 0) / rainValues.length).toFixed(1) : 0,
+        maxRain: rainValues.length > 0 ? Math.max(...rainValues).toFixed(1) : 0
+    };
+}
+
+function renderHistoryTable() {
+    const tbody = document.getElementById('historyTableBody');
+    const pagination = document.getElementById('pagination');
+    const totalRecordsCount = document.getElementById('totalRecordsCount');
+    
+    // Update total records count
+    totalRecordsCount.textContent = `${filteredData.length} records`;
+    
+    if (filteredData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No data available</td></tr>';
+        pagination.innerHTML = '';
+        return;
+    }
+
+    // Calculate pagination
+    const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const pageData = filteredData.slice(startIndex, endIndex);
+
+    // Render table rows
+    tbody.innerHTML = pageData.map(row => `
+        <tr>
+            <td>${new Date(row.timestamp).toLocaleString('id-ID')}</td>
+            <td>${row.device_name || row.device_id}</td>
+            <td>${row.location || 'N/A'}</td>
+            <td>${row.distance !== null ? row.distance + ' cm' : 'N/A'}</td>
+            <td>${row.soil_moisture !== null ? row.soil_moisture + '%' : 'N/A'}</td>
+            <td>${row.temperature !== null ? parseFloat(row.temperature).toFixed(1) + '째C' : 'N/A'}</td>
+            <td>${row.rain_percentage !== null ? row.rain_percentage + '%' : 'N/A'}</td>
+        </tr>
+    `).join('');
+
+    // Render pagination
+    renderPagination(totalPages);
+}
+
+function renderPagination(totalPages) {
+    const pagination = document.getElementById('pagination');
+    
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let paginationHtml = '';
+    
+    // Previous button
+    if (currentPage > 1) {
+        paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${currentPage - 1})">&laquo;</a></li>`;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(1)">1</a></li>`;
+        if (startPage > 2) {
+            paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const activeClass = i === currentPage ? 'active' : '';
+        paginationHtml += `<li class="page-item ${activeClass}"><a class="page-link" href="#" onclick="changePage(${i})">${i}</a></li>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${totalPages})">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    if (currentPage < totalPages) {
+        paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${currentPage + 1})">&raquo;</a></li>`;
+    }
+    
+    pagination.innerHTML = paginationHtml;
+}
+
+function changePage(page) {
+    currentPage = page;
+    renderHistoryTable();
+}
+
+// Event listeners for filters
+document.getElementById('sensorFilter').addEventListener('change', applyFilters);
+document.getElementById('rowsPerPage').addEventListener('change', applyFilters);
+
+function renderCharts(data) {
+    if (data.length === 0) return;
+
+    // Prepare data for charts
+    const labels = data.map(row => new Date(row.timestamp).toLocaleTimeString('id-ID', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit' 
+    }));
+
+    // Destroy existing charts
+    Object.values(charts).forEach(chart => {
+        if (chart) chart.destroy();
+    });
+
+    // Distance Chart
+    charts.distance = new Chart(document.getElementById('distanceChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Jarak Air (cm)',
+                data: data.map(row => row.distance),
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: getChartOptions('Jarak Air', 'cm')
+    });
+
+    // Moisture Chart
+    charts.moisture = new Chart(document.getElementById('moistureChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Kelembaban Tanah (%)',
+                data: data.map(row => row.soil_moisture),
+                borderColor: '#198754',
+                backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: getChartOptions('Kelembaban Tanah', '%', 0, 100)
+    });
+
+    // Temperature Chart
+    charts.temperature = new Chart(document.getElementById('temperatureChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Suhu Udara (째C)',
+                data: data.map(row => row.temperature),
+                borderColor: '#ffc107',
+                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: getChartOptions('Suhu Udara', '째C')
+    });
+
+    // Rain Chart
+    charts.rain = new Chart(document.getElementById('rainChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Curah Hujan (%)',
+                data: data.map(row => row.rain_percentage),
+                borderColor: '#0dcaf0',
+                backgroundColor: 'rgba(13, 202, 240, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: getChartOptions('Curah Hujan', '%', 0, 100)
+    });
+}
+
+function getChartOptions(title, unit, min = null, max = null) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            },
+            title: {
+                display: false
+            }
+        },
+        scales: {
+            x: {
+                display: true,
+                title: {
+                    display: true,
+                    text: 'Waktu'
+                }
+            },
+            y: {
+                display: true,
+                title: {
+                    display: true,
+                    text: unit
+                },
+                min: min,
+                max: max
+            }
+        },
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        }
+    };
+}
+
+function showChartPopup(chartType) {
+    if (!charts[chartType]) return;
+
+    const chartTitles = {
+        distance: 'Jarak Air (cm)',
+        moisture: 'Kelembaban Tanah (%)',
+        temperature: 'Suhu Udara (째C)',
+        rain: 'Curah Hujan (%)'
+    };
+
+    const chartIcons = {
+        distance: 'fas fa-water text-primary',
+        moisture: 'fas fa-tint text-success',
+        temperature: 'fas fa-thermometer-half text-warning',
+        rain: 'fas fa-cloud-rain text-info'
+    };
+
+    const chartColors = {
+        distance: '#0d6efd',
+        moisture: '#198754',
+        temperature: '#ffc107',
+        rain: '#0dcaf0'
+    };
+
+    // Update modal title and icon
+    document.getElementById('chartModalTitle').innerHTML = `<i class="${chartIcons[chartType]}"></i> ${chartTitles[chartType]}`;
+    document.getElementById('chartModalIcon').className = chartIcons[chartType];
+
+    // Get chart data from the existing chart
+    const originalChart = charts[chartType];
+    const chartData = originalChart.data;
+
+    // Show modal
+    chartDetailModal.show();
+
+    // Wait for modal to be shown, then render the detailed chart
+    document.getElementById('chartDetailModal').addEventListener('shown.bs.modal', function() {
+        const ctx = document.getElementById('chartDetailCanvas').getContext('2d');
+        
+        // Destroy existing detail chart if any
+        if (window.detailChart) {
+            window.detailChart.destroy();
+        }
+
+        // Create detailed chart
+        window.detailChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: chartTitles[chartType],
+                    data: chartData.datasets[0].data,
+                    borderColor: chartColors[chartType],
+                    backgroundColor: chartColors[chartType] + '20',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    title: {
+                        display: true,
+                        text: `Detailed View - ${chartTitles[chartType]}`,
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Waktu'
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: chartTitles[chartType].split('(')[1]?.replace(')', '') || ''
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+    }, { once: true });
 }
 
 function exportData() {
-    const filterType = document.getElementById('filter-type').value;
-    const deviceId = document.getElementById('device-select-history').value;
-    
-    const params = new URLSearchParams({
-        export: 'csv',
-    });
-    
-    // Add device filter
-    if (deviceId !== 'all') {
-        params.append('device_id', deviceId);
+    if (filteredData.length === 0) {
+        alert('No data to export');
+        return;
     }
-    
-    // Add date/time parameters based on filter type
-    if (filterType === 'range') {
-        const startDate = document.getElementById('start-date').value;
-        const endDate = document.getElementById('end-date').value;
-        if (startDate) params.append('start_date', startDate);
-        if (endDate) params.append('end_date', endDate);
-        params.append('filter_type', filterType);
-    } else if (filterType === 'day') {
-        const selectedDate = document.getElementById('start-date').value;
-        if (selectedDate) params.append('target_date', selectedDate);
-        params.append('filter_type', filterType);
-    } else if (filterType === 'hour' || filterType === 'minute') {
-        const datetimeValue = document.getElementById('datetime-input').value;
-        if (datetimeValue) {
-            params.append('target_datetime', datetimeValue);
-            params.append('time_granularity', filterType);
-        }
-        params.append('filter_type', filterType);
-    } else { // filterType === 'none' or default
-        params.append('filter_type', 'none');
-    }
-    
-    window.open(`api/get_history.php?${params}`, '_blank');
-}
 
-// Function to update date/time inputs based on filter type
-function updateDateTimeInputs() {
-    const filterType = document.getElementById('filter-type').value;
-    const startDateContainer = document.getElementById('start-date-container');
-    const endDateContainer = document.getElementById('end-date-container');
-    const datetimeContainer = document.getElementById('datetime-container');
-    
-    // Hide all containers first
-    startDateContainer.classList.add('d-none');
-    endDateContainer.classList.add('d-none');
-    datetimeContainer.classList.add('d-none');
-    
-    // Show appropriate containers based on filter type
-    if (filterType === 'range') {
-        startDateContainer.classList.remove('d-none');
-        endDateContainer.classList.remove('d-none');
-        document.querySelector('#start-date-container label').textContent = 'Tanggal Mulai';
-        document.querySelector('#end-date-container label').textContent = 'Tanggal Akhir';
-    } else if (filterType === 'day') {
-        startDateContainer.classList.remove('d-none');
-        document.querySelector('#start-date-container label').textContent = 'Pilih Tanggal';
-    } else if (filterType === 'hour') {
-        datetimeContainer.classList.remove('d-none');
-        document.querySelector('#datetime-container label').textContent = 'Pilih Jam (Data per Jam)';
-    } else if (filterType === 'minute') {
-        datetimeContainer.classList.remove('d-none');
-        document.querySelector('#datetime-container label').textContent = 'Pilih Waktu (Data per Menit)';
-    }
-}
+    const headers = ['Timestamp', 'Device ID', 'Device Name', 'Location', 'Distance (cm)', 'Soil Moisture (%)', 'Temperature (째C)', 'Rain (%)'];
+    const csvContent = [
+        headers.join(','),
+        ...filteredData.map(row => [
+            `"${row.timestamp}"`,
+            `"${row.device_id}"`,
+            `"${row.device_name || row.device_id}"`,
+            `"${row.location || 'N/A'}"`,
+            row.distance !== null ? row.distance : '',
+            row.soil_moisture !== null ? row.soil_moisture : '',
+            row.temperature !== null ? parseFloat(row.temperature).toFixed(1) : '',
+            row.rain_percentage !== null ? row.rain_percentage : ''
+        ].join(','))
+    ].join('\n');
 
-// Initialize history when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.iotHistory = new IoTHistory();
-});
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `iot_history_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
