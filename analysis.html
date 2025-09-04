@@ -8,9 +8,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="css/style.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Hapus Chart.BoxAndViolin.js karena tidak digunakan -->
-    <!-- Hapus date-fns karena tidak digunakan langsung di sini untuk fungsionalitas inti -->
-    <!-- Hapus xlsx karena tidak digunakan lagi untuk ekspor -->
     
     <!-- Pastikan jspdf dan jspdf-autotable dimuat dengan benar -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -292,7 +289,6 @@
                     <div class="card-body">
                         <p>Download the filtered historical data in various formats.</p>
                         <div class="d-grid gap-2">
-                            <!-- Menghilangkan tombol CSV dan XLSX -->
                             <button class="btn btn-outline-danger" onclick="exportData('pdf')">
                                 <i class="fas fa-file-pdf"></i> Export to PDF
                             </button>

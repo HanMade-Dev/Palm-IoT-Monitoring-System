@@ -856,8 +856,6 @@ function renderComparisonCharts(data) {
     });
 }
 
-// Fungsi renderDistributionCharts dihapus
-
 async function exportData(format) {
     if (currentData.length === 0) {
         alert('No data to export.');
@@ -880,8 +878,21 @@ async function exportData(format) {
 
     if (format === 'pdf') {
         try {
+            // Check if jsPDF is available
+            if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+                console.error('jsPDF library not loaded or not accessible.');
+                alert('Failed to generate PDF. jsPDF library is not loaded.');
+                return;
+            }
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF('landscape'); // 'landscape' for wider tables
+
+            // Check if autoTable plugin is available
+            if (typeof doc.autoTable === 'undefined') {
+                console.error('jspdf-autotable plugin not loaded or not accessible.');
+                alert('Failed to generate PDF. jspdf-autotable plugin is not loaded.');
+                return;
+            }
 
             doc.text("IoT Monitoring System - Analysis Data", 14, 10);
             doc.autoTable({
@@ -937,7 +948,13 @@ async function exportData(format) {
         }
         for (const chartKey in comparisonCharts) {
             if (comparisonCharts[chartKey]) {
-                chartImages[chartKey] = comparisonCharts[chartKey].toBase64Image();
+                if (chartKey === 'tempMoisture') {
+                    chartImages['tempMoistureComparisonChart'] = comparisonCharts[chartKey].toBase64Image();
+                } else if (chartKey === 'rainWaterLevel') {
+                    chartImages['rainWaterLevelComparisonChart'] = comparisonCharts[chartKey].toBase64Image();
+                } else {
+                    chartImages[chartKey] = comparisonCharts[chartKey].toBase64Image();
+                }
             }
         }
 
