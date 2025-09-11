@@ -1,4 +1,7 @@
 <?php
+// Set timezone to WITA (Central Indonesia Time) - GMT+8
+date_default_timezone_set('Asia/Makassar');
+
 // Database configuration for production
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'fare1399_sawit_iot_db');

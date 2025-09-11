@@ -33,7 +33,7 @@ const char apn[] = "internet"; // APN Telkomsel
 
 /***** NTP CONFIG *****/
 const char* ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 7 * 3600;  // GMT+7 untuk WIB (Indonesia)
+const long gmtOffset_sec = 8 * 3600;  // GMT+8 untuk WITA (Indonesia)
 const int daylightOffset_sec = 0;
 
 /***** PIN DEFINITIONS *****/
