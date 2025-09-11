@@ -16,14 +16,6 @@ document.addEventListener('DOMContentLoaded', function() {
     loadAnalysisData(); // Initial data load
 });
 
-function setDefaultDates() {
-    const today = new Date();
-    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    document.getElementById('endDate').value = today.toISOString().split('T')[0];
-    document.getElementById('startDate').value = lastWeek.toISOString().split('T')[0];
-}
-
 function setupTimePeriodListener() {
     const timePeriodSelect = document.getElementById('timePeriod');
     const startDateInput = document.getElementById('startDate');
@@ -856,6 +848,7 @@ function renderComparisonCharts(data) {
     });
 }
 
+// Function to export the data to PDF with the correct layout
 async function exportData(format) {
     if (currentData.length === 0) {
         alert('No data to export.');
@@ -878,47 +871,301 @@ async function exportData(format) {
 
     if (format === 'pdf') {
         try {
-            // Check if jsPDF is available
             if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
-                console.error('jsPDF library not loaded or not accessible.');
-                alert('Failed to generate PDF. jsPDF library is not loaded.');
+                alert('PDF library is not loaded.');
                 return;
             }
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('landscape'); // 'landscape' for wider tables
-
-            // Check if autoTable plugin is available
-            if (typeof doc.autoTable === 'undefined') {
-                console.error('jspdf-autotable plugin not loaded or not accessible.');
-                alert('Failed to generate PDF. jspdf-autotable plugin is not loaded.');
-                return;
-            }
-
-            doc.text("IoT Monitoring System - Analysis Data", 14, 10);
-            doc.autoTable({
-                head: [headers],
-                body: exportableData,
-                startY: 20,
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-                headStyles: { fillColor: [25, 135, 84], textColor: [255, 255, 255] },
-                columnStyles: {
-                    0: { cellWidth: 30 }, // Timestamp
-                    1: { cellWidth: 25 }, // Device ID
-                    2: { cellWidth: 30 }, // Device Name
-                    3: { cellWidth: 25 }, // Location
-                    4: { cellWidth: 20 }, // Distance
-                    5: { cellWidth: 20 }, // Moisture
-                    6: { cellWidth: 20 }, // Temperature
-                    7: { cellWidth: 20 }  // Rain
-                }
+    
+            const doc = new window.jspdf.jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
             });
-            doc.save(`${filename}.pdf`);
+    
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            let currentY = 10; // Starting Y position for content
+    
+            // Load logo
+            const logoImg = new Image();
+            logoImg.src = "assets/LOGO-MONITOR.png";
+    
+            logoImg.onload = async function () {
+                // Tambah logo di tengah atas
+                const imgWidth = 25;
+                const imgHeight = 25;
+                const imgX = (pageWidth - imgWidth) / 2;
+                doc.addImage(logoImg, 'PNG', imgX, currentY, imgWidth, imgHeight);
+                currentY += imgHeight + 10;
+    
+                // Judul
+                doc.setFontSize(16);
+                doc.setTextColor(25, 135, 84);
+                doc.text("Laporan Analisis Data IoT Kelapa Sawit", pageWidth / 2, currentY, { align: "center" });
+                currentY += 7;
+    
+                // Subjudul + tanggal
+                doc.setFontSize(10);
+                doc.setTextColor(100);
+                doc.text(`Dibuat pada: ${new Date().toLocaleString('id-ID')}`, pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+    
+                // Info Filter
+                const deviceFilter = document.getElementById('deviceFilter');
+                const selectedDeviceText = deviceFilter.options[deviceFilter.selectedIndex].text;
+                const timePeriod = document.getElementById('timePeriod').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+    
+                let filterInfo = `Periode: ${timePeriod}`;
+                if (timePeriod === 'custom') {
+                    filterInfo += ` (${startDate} - ${endDate})`;
+                }
+                if (selectedDeviceText !== 'All Devices') {
+                    filterInfo += `, Device: ${selectedDeviceText}`;
+                }
+    
+                doc.text(`Filter Data: ${filterInfo}`, pageWidth / 2, currentY, { align: "center" });
+                currentY += 10;
+    
+                // Ringkasan Analisis Sensor
+                const analytics = calculateAnalytics(currentData);
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                doc.text("Ringkasan Analisis Sensor", pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+    
+                doc.autoTable({
+                    startY: currentY,
+                    head: [['Parameter', 'Average', 'Min', 'Max']],
+                    body: [
+                        ['Jarak Air (cm)', analytics.avgDistance, analytics.minDistance, analytics.maxDistance],
+                        ['Soil Moisture (%)', analytics.avgMoisture, analytics.minMoisture, analytics.maxMoisture],
+                        ['Temperature (°C)', analytics.avgTemperature, analytics.minTemperature, analytics.maxTemperature],
+                        ['Rain (%)', analytics.avgRain, '-', analytics.maxRain]
+                    ],
+                    theme: 'grid',
+                    headStyles: { fillColor: [25, 135, 84], textColor: [255, 255, 255], halign: 'center' },
+                    styles: { fontSize: 9, halign: 'center' },
+                    tableWidth: 'auto',
+                    margin: { left: (pageWidth - 180) / 2 }
+                });
+                currentY = doc.lastAutoTable.finalY + 12;
+    
+                // =========================
+                // Grafik Ringkasan Kondisi (2 grafik di atas dan 2 grafik di bawah)
+                // =========================
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                doc.text("Grafik Ringkasan Kondisi", pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+                
+                const marginX = 20; // Margin kiri dan kanan
+                const gapX = 10; // Jarak antar grafik
+                const totalWidth = pageWidth - 2 * marginX; // Total lebar untuk grafik
+                const chartWidth = (totalWidth - gapX) / 2; // Lebar grafik (dua grafik sejajar)
+                const chartHeight = 60; // Tinggi grafik
+                
+                // Fungsi helper untuk cek halaman baru
+                const checkPageBreak = (neededHeight) => {
+                    if (currentY + neededHeight > pageHeight - 20) {
+                        doc.addPage();
+                        currentY = 20;
+                    }
+                };
+                
+                // Cek jika grafik perlu ditambahkan ke halaman baru
+                checkPageBreak(chartHeight + 20);
+                
+                // Array grafik ringkasan kondisi dan judulnya
+                const conditionChartsArr = [
+                    { chart: conditionCharts.tempConditionChart, title: 'Temperature Conditions' },
+                    { chart: conditionCharts.moistureConditionChart, title: 'Soil Moisture Conditions' },
+                    { chart: conditionCharts.waterLevelConditionChart, title: 'Water Level Conditions' },
+                    { chart: conditionCharts.rainConditionChart, title: 'Rainfall Conditions' }
+                ];
+                
+                // Tambahkan grafik secara 2 di atas, 2 di bawah
+                for (let i = 0; i < 2; i++) {
+                    const x = marginX + i * (chartWidth + gapX); // Posisi grafik untuk baris pertama
+                    const chartObj = conditionChartsArr[i];
+                    if (chartObj.chart) {
+                        const imgData = chartObj.chart.toBase64Image();
+                        doc.setFontSize(10);
+                        doc.text(chartObj.title, x + chartWidth / 2, currentY, { align: "center" });
+                        doc.addImage(imgData, 'PNG', x, currentY + 4, chartWidth, chartHeight);
+                    }
+                }
+                currentY += chartHeight + 10; // Pindah ke baris kedua
+                
+                for (let i = 2; i < 4; i++) {
+                    const x = marginX + (i - 2) * (chartWidth + gapX); // Posisi grafik untuk baris kedua
+                    const chartObj = conditionChartsArr[i];
+                    if (chartObj.chart) {
+                        const imgData = chartObj.chart.toBase64Image();
+                        doc.setFontSize(10);
+                        doc.text(chartObj.title, x + chartWidth / 2, currentY, { align: "center" });
+                        doc.addImage(imgData, 'PNG', x, currentY + 4, chartWidth, chartHeight);
+                    }
+                }
+                currentY += chartHeight + 60; // Update currentY setelah menambahkan grafik
+
+    
+                // =========================
+                // Grafik Tren Sensor (Pindahkan ke halaman baru)
+                // =========================
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                
+                // Pastikan Grafik Tren Sensor ada di halaman baru
+                if (currentY + 30 > pageHeight - 20) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+                
+                // Judul Grafik Tren Sensor
+                doc.text("Grafik Tren Sensor", pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+                
+                const trendMarginX = 20;
+                const trendGapX = 10;
+                const trendTotalWidth = pageWidth - 2 * trendMarginX;
+                const trendChartWidth = (trendTotalWidth - trendGapX) / 2;
+                const trendChartHeight = 50;
+                
+                // Baris 1: Jarak Air dan Kelembaban Tanah
+                const trendChartsRow1 = [
+                    { chart: charts.distance, title: 'Jarak Air (cm) Trend' },
+                    { chart: charts.moisture, title: 'Kelembaban Tanah (%) Trend' }
+                ];
+                
+                for (let i = 0; i < trendChartsRow1.length; i++) {
+                    const x = trendMarginX + i * (trendChartWidth + trendGapX);
+                    const chartObj = trendChartsRow1[i];
+                    if (chartObj.chart) {
+                        const imgData = chartObj.chart.toBase64Image();
+                        doc.setFontSize(10);
+                        doc.text(chartObj.title, x + trendChartWidth / 2, currentY, { align: "center" });
+                        doc.addImage(imgData, 'PNG', x, currentY + 4, trendChartWidth, trendChartHeight);
+                    }
+                }
+                currentY += trendChartHeight + 20;
+                
+                // Baris 2: Suhu Udara dan Curah Hujan
+                const trendChartsRow2 = [
+                    { chart: charts.temperature, title: 'Suhu Udara (°C) Trend' },
+                    { chart: charts.rain, title: 'Curah Hujan (%) Trend' }
+                ];
+                
+                for (let i = 0; i < trendChartsRow2.length; i++) {
+                    const x = trendMarginX + i * (trendChartWidth + trendGapX);
+                    const chartObj = trendChartsRow2[i];
+                    if (chartObj.chart) {
+                        const imgData = chartObj.chart.toBase64Image();
+                        doc.setFontSize(10);
+                        doc.text(chartObj.title, x + trendChartWidth / 2, currentY, { align: "center" });
+                        doc.addImage(imgData, 'PNG', x, currentY + 4, trendChartWidth, trendChartHeight);
+                    }
+                }
+                currentY += trendChartHeight + 20;
+    
+                // =========================
+                // Grafik Perbandingan Sensor (tampilkan satu per halaman jika perlu)
+                // =========================
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                if (currentY + 80 > pageHeight - 20) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+                doc.text("Grafik Perbandingan Sensor", pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+    
+                const comparisonMarginX = 20;
+                const comparisonGapX = 10;
+                const comparisonTotalWidth = pageWidth - 2 * comparisonMarginX;
+                const comparisonChartWidth = (comparisonTotalWidth - comparisonGapX) / 2;
+                const comparisonChartHeight = 50;
+    
+                // Baris 1: Temperature vs Soil Moisture
+                if (comparisonCharts.tempMoisture) {
+                    const imgData = comparisonCharts.tempMoisture.toBase64Image();
+                    doc.setFontSize(10);
+                    doc.text('Temperature vs. Soil Moisture', comparisonMarginX + comparisonChartWidth / 2, currentY, { align: "center" });
+                    doc.addImage(imgData, 'PNG', comparisonMarginX, currentY + 4, comparisonChartWidth, comparisonChartHeight);
+                }
+    
+                // Baris 1: Rain vs Water Level (sejajar kanan)
+                if (comparisonCharts.rainWaterLevel) {
+                    const imgData = comparisonCharts.rainWaterLevel.toBase64Image();
+                    doc.setFontSize(10);
+                    doc.text('Rain vs. Water Level', comparisonMarginX + comparisonChartWidth + comparisonGapX + comparisonChartWidth / 2, currentY, { align: "center" });
+                    doc.addImage(imgData, 'PNG', comparisonMarginX + comparisonChartWidth + comparisonGapX, currentY + 4, comparisonChartWidth, comparisonChartHeight);
+                }
+                currentY += comparisonChartHeight + 20;
+    
+                // =========================
+                // Data Mentah (Pindahkan ke halaman baru)
+                // =========================
+                if (currentY + 30 > pageHeight - 20) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+                
+                // Judul dan Tabel Data Mentah
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                doc.text("Data Mentah", pageWidth / 2, currentY, { align: "center" });
+                
+                currentY += 6;
+                
+                // Data tabel untuk Data Mentah
+                const headers = ['Timestamp', 'Device ID', 'Device Name', 'Location', 'Distance (cm)', 'Soil Moisture (%)', 'Temperature (°C)', 'Rain (%)'];
+                const exportableData = currentData.map(row => [
+                    row.timestamp,
+                    row.device_id,
+                    row.device_name || row.device_id,
+                    row.location || 'N/A',
+                    row.distance !== null ? row.distance : '',
+                    row.soil_moisture !== null ? row.soil_moisture : '',
+                    row.temperature !== null ? parseFloat(row.temperature).toFixed(1) : '',
+                    row.rain_percentage !== null ? row.rain_percentage : ''
+                ]);
+                
+                // Tambahkan tabel data mentah
+                doc.autoTable({
+                    startY: currentY + 6,
+                    head: [headers],
+                    body: exportableData,
+                    theme: 'grid',
+                    styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', halign: 'center' },
+                    headStyles: { fillColor: [25, 135, 84], textColor: [255, 255, 255], halign: 'center' },
+                    tableWidth: 'auto',
+                    margin: { left: (pageWidth - 180) / 2 }
+                });
+                currentY = doc.lastAutoTable.finalY + 10;
+    
+                // Footer
+                if (currentY + 20 > pageHeight - 20) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+                doc.setFontSize(9);
+                doc.setTextColor(100);
+                doc.text("Laporan ini dihasilkan secara otomatis oleh Sistem Monitoring IoT Kelapa Sawit.", pageWidth / 2, currentY, { align: "center" });
+                currentY += 6;
+                doc.text("© 2025 IoT Monitoring Kelapa Sawit. All rights reserved.", pageWidth / 2, currentY, { align: "center" });
+    
+                // Simpan PDF
+                doc.save(`iot_analysis_data_${new Date().toISOString().split('T')[0]}.pdf`);
+            };
         } catch (error) {
             console.error('Error generating PDF:', error);
             alert('Failed to generate PDF. Please check console for details.');
         }
-    } else if (format === 'html') {
+    }
+
+    else if (format === 'html') {
         const analytics = calculateAnalytics(currentData);
         const deviceFilter = document.getElementById('deviceFilter');
         const selectedDeviceText = deviceFilter.options[deviceFilter.selectedIndex].text;
@@ -994,7 +1241,7 @@ async function exportData(format) {
             <body>
                 <div class="container-report">
                     <div class="header-section">
-                        <img src="https://via.placeholder.com/100" alt="Logo Perusahaan"> <!-- Ganti dengan logo Anda -->
+                        <img src="LOGO-MONITOR.png" alt="Logo Perusahaan">
                         <h1>Laporan Analisis Data IoT Kelapa Sawit</h1>
                         <p class="lead">Dibuat pada: ${new Date().toLocaleString('id-ID')}</p>
                         <p><strong>Filter Data:</strong> ${filterInfo}</p>
