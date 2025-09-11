@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <Ticker.h>
 #include <HardwareSerial.h> // Tambahkan untuk SIM800L
+#include <time.h> // Tambahkan untuk NTP time
 
 /***** WIFI *****/
 char ssid[] = "Mulka";  // Ganti dengan SSID WiFi Anda
@@ -29,6 +30,11 @@ const String API_KEY = "ec268cf585e0ed97afff8bf9319ba1b08aa4e3ca6bae079f23b594f6
 #define MODEM_RX 16   // ESP32 RX2 <- SIM800L TX
 HardwareSerial sim800l(1);
 const char apn[] = "internet"; // APN Telkomsel
+
+/***** NTP CONFIG *****/
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 7 * 3600;  // GMT+7 untuk WIB (Indonesia)
+const int daylightOffset_sec = 0;
 
 /***** PIN DEFINITIONS *****/
 #define TRIG_PIN 23
@@ -92,6 +98,10 @@ unsigned long lastWebUpdate = 0; // Waktu terakhir data dikirim ke web
 unsigned long lastReconnectAttempt = 0;
 const unsigned long RECONNECT_INTERVAL_MS = 30000; // Coba reconnect setiap 30 detik
 
+/***** TIME SYNC VARIABLES *****/
+bool timeInitialized = false;
+struct tm timeinfo;
+
 /***** FUNCTION PROTOTYPES *****/
 // Deklarasi fungsi agar bisa dipanggil sebelum definisinya
 void sampleSensors();
@@ -107,6 +117,9 @@ String getRainStatus(int rainPercentage);
 int rd_wetPercentFromADC(int adc, int dryHigh, int wetLow);
 void sendDataViaGPRS(); // Fungsi baru untuk kirim via SIM800L
 void sendCommand(String cmd, int waitMs = 1000); // Default parameter hanya di prototype
+void initNTP(); // Initialize NTP time synchronization
+String getCurrentTimestamp(); // Get current timestamp in format for server
+String getSIM800LTime(); // Get time from SIM800L module
 
 /***** UTILITIES *****/
 // Membaca nilai analog beberapa kali dan mengambil median untuk stabilitas
@@ -166,6 +179,93 @@ int rd_wetPercentFromADC(int adc, int dryHigh, int wetLow){
   return constrain(pct, 0, 100); // Batasi persentase antara 0 dan 100
 }
 
+/***** TIME MANAGEMENT FUNCTIONS *****/
+void initNTP() {
+  Serial.println("Initializing NTP time sync...");
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  
+  // Wait for time to be set
+  int attempts = 0;
+  while (!getLocalTime(&timeinfo) && attempts < 20) {
+    delay(500);
+    attempts++;
+  }
+  
+  if (attempts < 20) {
+    timeInitialized = true;
+    Serial.println("NTP time synchronized successfully!");
+    Serial.print("Current time: ");
+    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  } else {
+    Serial.println("Failed to obtain NTP time");
+    timeInitialized = false;
+  }
+}
+
+String getCurrentTimestamp() {
+  if (WiFi.status() == WL_CONNECTED && timeInitialized) {
+    // Use NTP time when WiFi is connected
+    if (getLocalTime(&timeinfo)) {
+      char timeStr[20];
+      strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+      return String(timeStr);
+    }
+  } else {
+    // Try to get time from SIM800L when WiFi is not available
+    String simTime = getSIM800LTime();
+    if (simTime.length() > 0) {
+      return simTime;
+    }
+  }
+  
+  // Return empty string if no time source is available
+  return "";
+}
+
+String getSIM800LTime() {
+  Serial.println("Getting time from SIM800L...");
+  sim800l.println("AT+CCLK?");
+  
+  String response = "";
+  unsigned long startTime = millis();
+  
+  // Wait up to 5 seconds for response, regardless of initial availability
+  while ((millis() - startTime < 5000)) {
+    if (sim800l.available()) {
+      String line = sim800l.readStringUntil('\n');
+      line.trim();
+      
+      if (line.startsWith("+CCLK:")) {
+        // Parse response format: +CCLK: "22/12/25,10:30:45+28"
+        int firstQuote = line.indexOf('"');
+        int secondQuote = line.indexOf('"', firstQuote + 1);
+        
+        if (firstQuote != -1 && secondQuote != -1) {
+          String timeStr = line.substring(firstQuote + 1, secondQuote);
+          // Extract timezone info (e.g., +28 means +7 hours in quarter-hours)
+          int tzStart = timeStr.indexOf('+');
+          if (tzStart == -1) tzStart = timeStr.lastIndexOf('-');
+          
+          String baseDateTimeStr = timeStr.substring(0, 17); // YY/MM/DD,HH:MM:SS part
+          
+          // Convert from YY/MM/DD,HH:MM:SS to YYYY-MM-DD HH:MM:SS  
+          String year = "20" + baseDateTimeStr.substring(0, 2);
+          String month = baseDateTimeStr.substring(3, 5);
+          String day = baseDateTimeStr.substring(6, 8);
+          String time = baseDateTimeStr.substring(9, 17);
+          
+          response = year + "-" + month + "-" + day + " " + time;
+          Serial.println("SIM800L time (local): " + response);
+          break;
+        }
+      }
+    }
+    delay(100); // Small delay to avoid busy waiting
+  }
+  
+  return response;
+}
+
 /***** LCD POWER HELPERS *****/
 void lcdSleep() {
   if (!lcdAwake) return; // Jika sudah tidur, jangan lakukan apa-apa
@@ -197,6 +297,9 @@ void sendDataToWebServer() {
     http.addHeader("X-API-Key", API_KEY); // Tambahkan API Key
     http.setTimeout(10000);  // Timeout 10 detik
 
+    // Get sensor timestamp
+    String sensorTimestamp = getCurrentTimestamp();
+    
     // Buat payload JSON
     StaticJsonDocument<512> doc; // Ukuran dokumen JSON, sesuaikan jika data lebih besar
     doc["device_id"] = DEVICE_ID;
@@ -209,6 +312,14 @@ void sendDataToWebServer() {
     doc["wifi_signal"] = WiFi.RSSI(); // Kekuatan sinyal WiFi
     doc["free_heap"] = ESP.getFreeHeap(); // Memori bebas ESP32
     doc["firmware_version"] = "2.0.0"; // Versi firmware device
+    
+    // Add sensor timestamp if available
+    if (sensorTimestamp.length() > 0) {
+      doc["sensor_timestamp"] = sensorTimestamp;
+      Serial.println("Using sensor timestamp: " + sensorTimestamp);
+    } else {
+      Serial.println("No sensor timestamp available - server will use server time");
+    }
 
     String jsonString;
     serializeJson(doc, jsonString); // Serialisasi JSON ke string
@@ -235,6 +346,9 @@ void sendDataToWebServer() {
 
 /***** FUNGSI KIRIM DATA VIA SIM800L (GPRS) *****/
 void sendDataViaGPRS() {
+  // Get sensor timestamp  
+  String sensorTimestamp = getCurrentTimestamp();
+  
   // Buat payload JSON
   StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
@@ -247,6 +361,14 @@ void sendDataViaGPRS() {
   doc["wifi_signal"] = WiFi.RSSI(); // Tetap sertakan meski WiFi tidak connected
   doc["free_heap"] = ESP.getFreeHeap();
   doc["firmware_version"] = "2.0.0";
+  
+  // Add sensor timestamp if available
+  if (sensorTimestamp.length() > 0) {
+    doc["sensor_timestamp"] = sensorTimestamp;
+    Serial.println("Using sensor timestamp for GPRS: " + sensorTimestamp);
+  } else {
+    Serial.println("No sensor timestamp available for GPRS - server will use server time");
+  }
 
   String jsonString;
   serializeJson(doc, jsonString);
@@ -438,6 +560,9 @@ void setup() {
     Serial.println("Signal strength: " + String(WiFi.RSSI()) + " dBm");
     lcd.setCursor(0, 1); 
     lcd.print("WiFi OK         ");
+    
+    // Initialize NTP time synchronization when WiFi is connected
+    initNTP();
   } else {
     Serial.println();
     Serial.println("WiFi connection failed!");

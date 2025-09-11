@@ -79,6 +79,12 @@ try {
 
         // Update deviceLatest with database data
         foreach ($dbData as $data) {
+            // Clamp last_seen to prevent future timestamps from being displayed
+            $clampedLastSeen = $data['last_seen'];
+            if ($data['last_seen'] && strtotime($data['last_seen']) > time()) {
+                $clampedLastSeen = date('Y-m-d H:i:s');
+            }
+            
             $deviceLatest[$data['device_id']] = [
                 'device_id' => $data['device_id'],
                 'device_name' => $data['device_name'] ?? 'Unknown Device',
@@ -97,7 +103,7 @@ try {
                 'firmware_version' => $data['firmware_version'] ?? '1.0.0',
                 'source' => 'database',
                 'is_online' => (bool)$data['is_online'], // Get from device_status
-                'last_seen' => $data['last_seen'] // Get from device_status
+                'last_seen' => $clampedLastSeen // Clamped to prevent future timestamps
             ];
         }
     } catch (Exception $e) {
@@ -132,6 +138,11 @@ try {
 
             // Only use buffer data if it's newer or if no database data exists
             if ($isNewer) {
+                // Clamp buffer timestamp for last_seen display
+                $bufferTime = strtotime($data['timestamp']);
+                $clampedBufferLastSeen = min($bufferTime, time());
+                $clampedBufferLastSeenStr = date('Y-m-d H:i:s', $clampedBufferLastSeen);
+                
                 $deviceLatest[$deviceId] = [
                     'device_id' => $data['device_id'],
                     'device_name' => $data['device_name'] ?? 'Unknown Device',
@@ -150,7 +161,7 @@ try {
                     'firmware_version' => $data['firmware_version'] ?? '1.0.0',
                     'source' => 'buffer',
                     'is_online' => true, // Assume online if data is coming from buffer
-                    'last_seen' => $data['timestamp'] // Use buffer timestamp as last seen
+                    'last_seen' => $clampedBufferLastSeenStr // Clamped buffer timestamp for last seen
                 ];
             }
         }
@@ -163,7 +174,9 @@ try {
     
     foreach ($deviceLatest as &$device) {
         $lastDataTime = $device['timestamp'] ? strtotime($device['timestamp']) : 0;
-        $secondsSinceLastData = $currentTime - $lastDataTime;
+        // Prevent future timestamps from affecting online status calculation
+        $effectiveTime = min($lastDataTime, $currentTime);
+        $secondsSinceLastData = $currentTime - $effectiveTime;
         
         // Update online status based on data freshness
         if ($secondsSinceLastData > $offlineThreshold) {
@@ -190,9 +203,11 @@ try {
             $device['is_online'] = true;
             // Update device_status table for persistent online status
             try {
+                // Use clamped effective time for database last_seen update
+                $clampedLastSeenForDB = date('Y-m-d H:i:s', $effectiveTime);
                 // Use INSERT ... ON DUPLICATE KEY UPDATE to handle cases where device_status might not exist yet
                 $updateStatusStmt = $pdo->prepare("INSERT INTO device_status (device_id, is_online, last_seen, updated_at) VALUES (?, TRUE, ?, NOW()) ON DUPLICATE KEY UPDATE is_online = TRUE, last_seen = VALUES(last_seen), updated_at = NOW()");
-                $updateStatusStmt->execute([$device['device_id'], $device['timestamp']]);
+                $updateStatusStmt->execute([$device['device_id'], $clampedLastSeenForDB]);
             } catch (Exception $e) {
                 logMessage("Failed to update online status for device " . $device['device_id'] . ": " . $e->getMessage());
             }

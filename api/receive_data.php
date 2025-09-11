@@ -77,12 +77,31 @@ try {
         $temperature = null; // Invalid temperature
     }
 
-    // Get current server time for timestamp
-    $currentTimestamp = date('Y-m-d H:i:s');
+    // Get timestamp - prefer sensor timestamp over server timestamp
+    $sensorTimestamp = $data['sensor_timestamp'] ?? null;
+    $currentTimestamp = date('Y-m-d H:i:s'); // Server timestamp as fallback
+    
+    // Validate and use sensor timestamp if provided and valid
+    $useTimestamp = $currentTimestamp; // Default to server time
+    if (!empty($sensorTimestamp)) {
+        // Validate sensor timestamp format and reasonableness
+        $sensorTime = strtotime($sensorTimestamp);
+        $serverTime = time();
+        
+        if ($sensorTime !== false && 
+            $sensorTime >= strtotime('2020-01-01') && // Not too old  
+            $sensorTime <= ($serverTime + 120) && // Max 2 minutes in future
+            $sensorTime >= ($serverTime - 600)) { // Max 10 minutes in past
+            $useTimestamp = date('Y-m-d H:i:s', $sensorTime);
+            logMessage("Using sensor timestamp: $useTimestamp for device: $deviceId");
+        } else {
+            logMessage("Invalid sensor timestamp: $sensorTimestamp for device: $deviceId, using server time");
+        }
+    }
 
     // Prepare buffer data
     $bufferData = [
-        'timestamp' => $currentTimestamp, // Use current server time
+        'timestamp' => $useTimestamp, // Use sensor timestamp if valid, otherwise server time
         'device_id' => $deviceId,
         'device_name' => $deviceName,
         'device_location' => $deviceLocation,
@@ -123,7 +142,7 @@ try {
         
         $statusStmt->execute([
             $deviceId,
-            $currentTimestamp, // Use current server time for last_seen
+            $useTimestamp, // Use sensor timestamp for last_seen if valid
             $bufferData['wifi_signal'],
             $bufferData['free_heap'],
             $bufferData['firmware_version']
