@@ -203,67 +203,108 @@ void initNTP() {
 }
 
 String getCurrentTimestamp() {
+  // Priority 1: Try NTP time if WiFi is connected
   if (WiFi.status() == WL_CONNECTED && timeInitialized) {
-    // Use NTP time when WiFi is connected
     if (getLocalTime(&timeinfo)) {
       char timeStr[20];
       strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+      Serial.println("Using NTP timestamp: " + String(timeStr));
       return String(timeStr);
-    }
-  } else {
-    // Try to get time from SIM800L when WiFi is not available
-    String simTime = getSIM800LTime();
-    if (simTime.length() > 0) {
-      return simTime;
     }
   }
   
-  // Return empty string if no time source is available
+  // Priority 2: Try SIM800L time (even if WiFi is connected but NTP failed)
+  String simTime = getSIM800LTime();
+  if (simTime.length() > 0) {
+    // Validate SIM800L time before using it
+    if (simTime.startsWith("20") && simTime.length() == 19) { // Basic format check: "2025-09-11 14:30:45"
+      Serial.println("Using SIM800L timestamp: " + simTime);
+      return simTime;
+    } else {
+      Serial.println("SIM800L returned invalid format: " + simTime);
+    }
+  }
+  
+  // Priority 3: No valid time source available
+  Serial.println("No valid timestamp available from NTP or SIM800L");
   return "";
 }
 
 String getSIM800LTime() {
   Serial.println("Getting time from SIM800L...");
-  sim800l.println("AT+CCLK?");
   
-  String response = "";
-  unsigned long startTime = millis();
-  
-  // Wait up to 5 seconds for response, regardless of initial availability
-  while ((millis() - startTime < 5000)) {
-    if (sim800l.available()) {
-      String line = sim800l.readStringUntil('\n');
-      line.trim();
-      
-      if (line.startsWith("+CCLK:")) {
-        // Parse response format: +CCLK: "22/12/25,10:30:45+28"
-        int firstQuote = line.indexOf('"');
-        int secondQuote = line.indexOf('"', firstQuote + 1);
+  // Retry mechanism for SIM800L time acquisition
+  for (int attempt = 0; attempt < 3; attempt++) {
+    Serial.println("SIM800L time attempt " + String(attempt + 1) + "/3");
+    sim800l.println("AT+CCLK?");
+    
+    String response = "";
+    String fullResponse = "";
+    unsigned long startTime = millis();
+    
+    // Wait up to 5 seconds for response
+    while ((millis() - startTime < 5000)) {
+      if (sim800l.available()) {
+        String line = sim800l.readStringUntil('\n');
+        line.trim();
+        fullResponse += line + " | ";
         
-        if (firstQuote != -1 && secondQuote != -1) {
-          String timeStr = line.substring(firstQuote + 1, secondQuote);
-          // Extract timezone info (e.g., +28 means +7 hours in quarter-hours)
-          int tzStart = timeStr.indexOf('+');
-          if (tzStart == -1) tzStart = timeStr.lastIndexOf('-');
+        if (line.startsWith("+CCLK:")) {
+          Serial.println("Raw CCLK response: " + line);
           
-          String baseDateTimeStr = timeStr.substring(0, 17); // YY/MM/DD,HH:MM:SS part
+          // Parse response format: +CCLK: "25/09/11,02:14:38+28"
+          int firstQuote = line.indexOf('"');
+          int secondQuote = line.indexOf('"', firstQuote + 1);
           
-          // Convert from YY/MM/DD,HH:MM:SS to YYYY-MM-DD HH:MM:SS  
-          String year = "20" + baseDateTimeStr.substring(0, 2);
-          String month = baseDateTimeStr.substring(3, 5);
-          String day = baseDateTimeStr.substring(6, 8);
-          String time = baseDateTimeStr.substring(9, 17);
-          
-          response = year + "-" + month + "-" + day + " " + time;
-          Serial.println("SIM800L time (local): " + response);
-          break;
+          if (firstQuote != -1 && secondQuote != -1) {
+            String timeStr = line.substring(firstQuote + 1, secondQuote);
+            Serial.println("Extracted time string: " + timeStr);
+            
+            // Parse YY/MM/DD,HH:MM:SS+TZ format
+            if (timeStr.length() >= 17) {
+              String yearStr = timeStr.substring(0, 2);
+              String monthStr = timeStr.substring(3, 5);
+              String dayStr = timeStr.substring(6, 8);
+              String timePartStr = timeStr.substring(9, 17); // HH:MM:SS
+              
+              // Convert 2-digit year to 4-digit year
+              int year = yearStr.toInt();
+              if (year >= 0 && year <= 30) {
+                year += 2000; // 00-30 = 2000-2030
+              } else {
+                year += 1900; // 31-99 = 1931-1999
+              }
+              
+              // Check if year is reasonable (network time sync successful)
+              if (year >= 2023) {
+                response = String(year) + "-" + monthStr + "-" + dayStr + " " + timePartStr;
+                Serial.println("Valid SIM800L time acquired: " + response);
+                return response;
+              } else {
+                Serial.println("SIM800L time year too old (" + String(year) + "), network time sync may not be ready");
+              }
+            } else {
+              Serial.println("Invalid time string format, length: " + String(timeStr.length()));
+            }
+          } else {
+            Serial.println("Could not find quotes in CCLK response");
+          }
+          break; // Break from inner while loop
         }
       }
+      delay(100);
     }
-    delay(100); // Small delay to avoid busy waiting
+    
+    if (response.length() == 0) {
+      Serial.println("Attempt " + String(attempt + 1) + " failed. Full response: " + fullResponse);
+      if (attempt < 2) {
+        delay(2000); // Wait 2 seconds before retry
+      }
+    }
   }
   
-  return response;
+  Serial.println("SIM800L time acquisition failed after all attempts");
+  return "";
 }
 
 /***** LCD POWER HELPERS *****/
@@ -382,7 +423,7 @@ void sendDataViaGPRS() {
   // Buka HTTP connection
   sendCommand("AT+HTTPINIT");
   sendCommand("AT+HTTPPARA=\"CID\",1");
-  sendCommand("AT+HTTPPARA=\"URL\",\"iotmonitoringbycodev.my.id/api/receive_data.php\""); // Gunakan HTTP
+  sendCommand("AT+HTTPPARA=\"URL\",\"http://iotmonitoringbycodev.my.id/api/receive_data.php\""); // Gunakan HTTP dengan scheme
   sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"");
   sendCommand(String("AT+HTTPPARA=\"USERDATA\",\"X-API-Key: ") + API_KEY + "\""); // Tambahkan header API Key
   sendCommand(String("AT+HTTPDATA=") + jsonString.length() + ",10000");
@@ -511,11 +552,15 @@ void setup() {
   // Inisialisasi SIM800L
   sim800l.begin(9600, SERIAL_8N1, MODEM_RX, MODEM_TX);
   Serial.println("SIM800L initialized.");
-  sim800l.println("AT"); // Test modem
-  delay(1000);
-  while (sim800l.available()) {
-    Serial.write(sim800l.read());
-  }
+  
+  // Initialize SIM800L with network time sync
+  sendCommand("AT");         // Test modem
+  sendCommand("ATE0");       // Turn off echo
+  sendCommand("AT+CLTS=1");  // Enable network time sync
+  sendCommand("AT&W");       // Save settings to NVRAM
+  sendCommand("AT+CREG?");   // Check network registration
+  
+  Serial.println("SIM800L network time sync enabled");
 
   // Inisialisasi LCD I2C
   Wire.begin();

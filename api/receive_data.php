@@ -79,25 +79,44 @@ try {
 
     // Get timestamp - prefer sensor timestamp over server timestamp
     $sensorTimestamp = $data['sensor_timestamp'] ?? null;
-    $currentTimestamp = date('Y-m-d H:i:s'); // Server timestamp as fallback
+    $currentTimestamp = date('Y-m-d H:i:s'); // Server timestamp as fallback (WIB timezone assumed)
     
     // Validate and use sensor timestamp if provided and valid
     $useTimestamp = $currentTimestamp; // Default to server time
+    $timestampSource = 'server';
+    
     if (!empty($sensorTimestamp)) {
         // Validate sensor timestamp format and reasonableness
         $sensorTime = strtotime($sensorTimestamp);
         $serverTime = time();
         
+        // Stricter validation: check if timestamp is reasonable
+        // Use relative time windows instead of hard-coded years
         if ($sensorTime !== false && 
-            $sensorTime >= strtotime('2020-01-01') && // Not too old  
-            $sensorTime <= ($serverTime + 120) && // Max 2 minutes in future
-            $sensorTime >= ($serverTime - 600)) { // Max 10 minutes in past
+            $sensorTime >= strtotime('2023-01-01') && // Not older than 2023 (reasonable minimum)
+            $sensorTime <= ($serverTime + 60) &&      // Max 1 minute in future
+            $sensorTime >= ($serverTime - 600)) {     // Max 10 minutes in past (increased for GPRS delays)
+            
             $useTimestamp = date('Y-m-d H:i:s', $sensorTime);
+            $timestampSource = 'sensor';
             logMessage("Using sensor timestamp: $useTimestamp for device: $deviceId");
         } else {
-            logMessage("Invalid sensor timestamp: $sensorTimestamp for device: $deviceId, using server time");
+            $sensorDate = date('Y-m-d H:i:s', $sensorTime ?: 0);
+            $serverDate = date('Y-m-d H:i:s', $serverTime);
+            logMessage("REJECTED sensor timestamp: $sensorTimestamp (parsed as: $sensorDate) for device: $deviceId. Server time: $serverDate. Using server time instead.");
         }
+    } else {
+        logMessage("No sensor timestamp provided for device: $deviceId, using server time: $useTimestamp");
     }
+    
+    // Add metadata for debugging
+    $timestampInfo = [
+        'used_timestamp' => $useTimestamp,
+        'source' => $timestampSource,
+        'sensor_timestamp_raw' => $sensorTimestamp,
+        'server_timestamp' => $currentTimestamp
+    ];
+    logMessage("Timestamp info for $deviceId: " . json_encode($timestampInfo));
 
     // Prepare buffer data
     $bufferData = [
