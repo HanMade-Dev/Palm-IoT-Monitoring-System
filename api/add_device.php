@@ -437,10 +437,27 @@ try {
     $deviceName = sanitizeInput($data['device_name']);
     $location = isset($data['location']) ? sanitizeInput($data['location']) : '';
     $description = isset($data['description']) ? sanitizeInput($data['description']) : '';
+    $latitude = isset($data['latitude']) ? $data['latitude'] : null;
+    $longitude = isset($data['longitude']) ? $data['longitude'] : null;
 
     // Validate device_id format
     if (!preg_match('/^[A-Za-z0-9_]+$/', $deviceId)) {
         throw new Exception('Device ID can only contain letters, numbers, and underscores');
+    }
+
+    // Validate coordinates if provided
+    if ($latitude !== null) {
+        if (!is_numeric($latitude) || $latitude < -90 || $latitude > 90) {
+            throw new Exception('Latitude must be a number between -90 and 90');
+        }
+        $latitude = (float) $latitude;
+    }
+    
+    if ($longitude !== null) {
+        if (!is_numeric($longitude) || $longitude < -180 || $longitude > 180) {
+            throw new Exception('Longitude must be a number between -180 and 180');
+        }
+        $longitude = (float) $longitude;
     }
 
     $pdo = getDBConnection();
@@ -455,10 +472,10 @@ try {
     }
 
     // Insert device
-    $insertSql = "INSERT INTO devices (device_id, device_name, location, description, is_active, created_at, updated_at) 
-                  VALUES (?, ?, ?, ?, TRUE, NOW(), NOW())";
+    $insertSql = "INSERT INTO devices (device_id, device_name, location, description, latitude, longitude, is_active, created_at, updated_at) 
+                  VALUES (?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())";
     $insertStmt = $pdo->prepare($insertSql);
-    $insertStmt->execute([$deviceId, $deviceName, $location, $description]);
+    $insertStmt->execute([$deviceId, $deviceName, $location, $description, $latitude, $longitude]);
 
     // Insert device status
     $statusSql = "INSERT INTO device_status (device_id, is_online, firmware_version, created_at, updated_at) VALUES (?, FALSE, '2.0.0', NOW(), NOW())";

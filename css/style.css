@@ -10,6 +10,70 @@
     --dark-color: #212529;
 }
 
+/* Map Styles */
+.leaflet-container {
+    height: 100% !important;
+    width: 100% !important;
+    border-radius: 8px;
+}
+
+#dashboardMap {
+    height: 400px !important;
+    width: 100% !important;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+#addDeviceMap, #editDeviceMap {
+    height: 350px !important;
+    width: 100% !important;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    position: relative;
+    z-index: 1;
+}
+
+#addDeviceMap .leaflet-container,
+#editDeviceMap .leaflet-container {
+    height: 100% !important;
+    width: 100% !important;
+    border-radius: 8px;
+}
+
+/* Modal map specific fixes */
+.modal-dialog .leaflet-container {
+    height: 100% !important;
+    width: 100% !important;
+    position: relative !important;
+}
+
+.modal-body #addDeviceMap,
+.modal-body #editDeviceMap {
+    position: relative !important;
+    overflow: hidden;
+}
+
+/* Ensure map tiles load properly in modal */
+.modal.show #addDeviceMap .leaflet-container,
+.modal.show #editDeviceMap .leaflet-container {
+    height: 350px !important;
+    width: 100% !important;
+}
+
+.leaflet-popup-content-wrapper {
+    border-radius: 8px;
+}
+
+.map-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    color: #6c757d;
+}
+
 body {
     background-color: #f5f5f5;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
