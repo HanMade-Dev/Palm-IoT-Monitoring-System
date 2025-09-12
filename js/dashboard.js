@@ -86,6 +86,22 @@ class IoTDashboard {
                 }
             }, 300);
         });
+
+        // Add Device Tab click event listener to fix map display
+        const addDeviceTab = document.getElementById('add-device-tab');
+        if (addDeviceTab) {
+            addDeviceTab.addEventListener('shown.bs.tab', () => {
+                setTimeout(() => {
+                    if (this.addDeviceMap) {
+                        this.addDeviceMap.invalidateSize();
+                        console.log('Add Device Map invalidated on tab show');
+                    } else {
+                        // Initialize map if not already initialized
+                        this.initializeAddDeviceMap();
+                    }
+                }, 100);
+            });
+        }
     }
 
     // MAP INITIALIZATION FUNCTIONS

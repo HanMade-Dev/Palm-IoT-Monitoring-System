@@ -51,6 +51,7 @@
 .modal-body #editDeviceMap {
     position: relative !important;
     overflow: hidden;
+    min-height: 350px !important;
 }
 
 /* Ensure map tiles load properly in modal */
@@ -58,6 +59,21 @@
 .modal.show #editDeviceMap .leaflet-container {
     height: 350px !important;
     width: 100% !important;
+    min-height: 350px !important;
+}
+
+/* Additional fixes for modal map */
+.modal-xl .modal-body #addDeviceMap,
+.modal-xl .modal-body #editDeviceMap {
+    height: 350px !important;
+    width: 100% !important;
+}
+
+.modal-body .card-body #addDeviceMap,
+.modal-body .card-body #editDeviceMap {
+    height: 350px !important;
+    width: 100% !important;
+    display: block;
 }
 
 .leaflet-popup-content-wrapper {
@@ -72,6 +88,21 @@
     background-color: #f8f9fa;
     border-radius: 8px;
     color: #6c757d;
+}
+
+/* Logo styling for navbar */
+.navbar-brand img {
+    height: 24px !important;
+    width: auto !important;
+    margin-right: 8px !important;
+    vertical-align: middle !important;
+    max-height: 24px !important;
+}
+
+.header-logo img {
+    height: 40px;
+    width: auto;
+    vertical-align: middle;
 }
 
 body {
@@ -165,11 +196,99 @@ body {
 /* Hero Section */
 .hero-section {
     background: linear-gradient(135deg, #198754 0%, #20c997 100%);
-    min-height: 70vh;
+    min-height: 85vh;
     display: flex;
     align-items: center;
     position: relative;
     overflow: hidden;
+}
+
+.min-vh-75 {
+    min-height: 75vh;
+}
+
+/* Hero Content Styling */
+.hero-content {
+    animation: fadeInUp 1s ease-out;
+}
+
+.hero-stats {
+    margin: 2rem 0;
+}
+
+.stat-item {
+    padding: 1rem;
+}
+
+.stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Enhanced Feature Cards */
+.feature-card.animated {
+    animation: slideInUp 0.8s ease-out forwards;
+    opacity: 0;
+    transform: translateY(30px);
+}
+
+.feature-card.animated.delay-1 {
+    animation-delay: 0.2s;
+}
+
+.feature-card.animated.delay-2 {
+    animation-delay: 0.4s;
+}
+
+.feature-card.animated.delay-3 {
+    animation-delay: 0.6s;
+}
+
+.feature-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+
+.feature-badge .badge {
+    font-size: 0.7rem;
+    animation: pulse 2s infinite;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
 }
 
 .hero-section::before {
